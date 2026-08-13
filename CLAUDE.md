@@ -33,6 +33,15 @@ prefix Bash commands with `export PATH="$PATH:/c/Program Files/nodejs";` or use 
 | `npm run icons` | Regenerates `public/*.png` from the game palette |
 | `npm run day -- 12` | Headless harness: runs 12 days and prints each debrief |
 
+### Deploying
+
+`.github/workflows/deploy.yml` builds and publishes to GitHub Pages on every push to `main`.
+Pages serves from a repository subpath (`user.github.io/<repo>/`), which is why
+**`base: './'` is set in `vite.config.ts`** and why the manifest's `start_url` and `scope` are
+relative. With Vite's default absolute `/assets/…` paths every script 404s and the page comes
+up blank — and it fails only when deployed, never locally, so it is worth knowing about before
+changing it. Serving `dist/` from any subdirectory reproduces the problem in seconds.
+
 ## Architecture
 
 **The one rule that matters: `src/sim/` must not import from `render/`, `ui/`, `input/` or
