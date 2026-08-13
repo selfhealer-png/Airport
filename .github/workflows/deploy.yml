@@ -1,0 +1,52 @@
+name: Deploy to GitHub Pages
+
+# Pages serves the site from a repository subpath (user.github.io/<repo>/), which is why
+# `base: './'` is set in vite.config.ts. With absolute asset paths every script would 404 and
+# the page would come up blank.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; queue the newest and let it win.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # The build regenerates the app icons from the sprite palette, typechecks, then bundles.
+      - run: npm run build
+
+      # Cheap insurance: a deploy should never ship a build whose tests are failing.
+      - run: npm test
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

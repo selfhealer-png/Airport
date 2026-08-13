@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+.DS_Store
+
+# Generated from src/sprites by `npm run icons`; regenerate rather than hand-edit.
+public/*.png
+
+# Per-machine Claude Code settings, not project history.
+.claude/settings.local.json

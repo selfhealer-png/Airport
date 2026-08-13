@@ -1,0 +1,646 @@
+/*
+ * Portrait-first phone layout: a fixed HUD strip, the map filling everything between, and a
+ * build drawer pinned to the bottom. Safe-area insets keep the HUD clear of the notch and the
+ * drawer clear of the home indicator.
+ */
+
+:root {
+  /* Side gutter that respects a curved screen's inset without ever going below 16px. */
+  --gutter-left: max(16px, env(safe-area-inset-left));
+  --gutter-right: max(16px, env(safe-area-inset-right));
+  --bg: #1b2a33;
+  --fg: #eef2f5;
+  --panel: #223540;
+  --panel-edge: #2f4b5a;
+  --chip: #2c4553;
+  --chip-edge: #3a5a6d;
+  --accent: #e8b44a;
+  --good: #4ec97a;
+  --bad: #e8503a;
+  --hud-height: 44px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font: 500 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* The game handles its own gestures; the browser must not also scroll or zoom. */
+  overscroll-behavior: none;
+  touch-action: none;
+  /* iOS inflates text in some orientations; the HUD is tight enough that it would wrap. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * `minmax(0, …)` on both axes is load-bearing, not decoration.
+ *
+ * A grid track's automatic minimum is its content's min-content size, so the wide build
+ * drawer was sizing the whole column past the viewport. Every child then stretched to that
+ * width — including the canvas, which centres the map inside itself, pushing the airfield
+ * clean off a phone screen. Pinning the track to `minmax(0, 1fr)` lets it shrink instead.
+ */
+#app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+#hud,
+#map-wrap,
+#drawer {
+  min-width: 0;
+}
+
+#hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: calc(var(--hud-height) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) var(--gutter-right) 0 var(--gutter-left);
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-edge);
+}
+
+.hud-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  /* On a 320px screen the level name and the stats do not both fit. The name is decoration
+     and the stats are the game, so the name is what gets truncated. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-group {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+}
+
+.hud-stat {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.hud-rep::before {
+  content: "★ ";
+  opacity: 0.7;
+}
+
+/*
+ * The canvas is absolutely positioned inside this wrapper rather than sized with height:100%.
+ * A canvas in a `1fr` grid row with a percentage height creates a circular dependency — the
+ * row sizes to the canvas, the canvas sizes to the row — and the browser resolves it using
+ * the backing-store size, which then feeds back into the next measurement. Taking the canvas
+ * out of flow breaks the loop; `min-height: 0` lets the row actually shrink.
+ */
+#map-wrap {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  /* Belt and braces with the renderer: never interpolate pixel art. */
+  image-rendering: pixelated;
+}
+
+/* Shown only if start-up throws, so a phone can report the fault without a console. */
+#crash {
+  position: fixed;
+  inset: 12px;
+  z-index: 10;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  background: #2a1414;
+  border: 1px solid var(--bad);
+  border-radius: 10px;
+  color: #ffd9d2;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+/*
+ * The drawer is collapsed by default and capped when open. It grows with whatever the game
+ * has to say — forecast pills, several lines of advice — and on a phone that was squashing
+ * the map down to a sliver, which is the one thing the player actually needs to see while
+ * building.
+ */
+#drawer {
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--panel-edge);
+  max-height: 60dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+/* The always-visible row: build, undo, and the one button that starts the day. */
+.drawer-bar {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  padding: 0 var(--gutter-right) 0 var(--gutter-left);
+}
+
+.drawer-bar .primary-button {
+  width: auto;
+  flex: 1 1 auto;
+  margin: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+}
+
+.chip-toggle,
+.chip-undo {
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 66px;
+  font-weight: 600;
+}
+
+/* The toggle carries the armed tool's name, which can be long enough to wrap the button that
+   actually starts the day. It truncates; that one does not. */
+.chip-toggle {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  line-height: 30px;
+}
+
+/* A warning behind a closed drawer has to announce itself somehow. */
+.chip-toggle.has-warnings {
+  border-color: var(--bad);
+  box-shadow: inset 0 0 0 1px var(--bad);
+}
+
+/*
+ * The collapsed drawer's entire teaching channel: the single most important thing the game
+ * would have said, tappable to open the rest.
+ */
+.drawer-hint {
+  display: flex;
+  align-items: center;
+  /* 44px is the smallest comfortable touch target, and this is the collapsed drawer's only
+     way in to the detail. */
+  min-height: 44px;
+  width: calc(100% - var(--gutter-left) - var(--gutter-right));
+  margin: 0 var(--gutter-right) 8px var(--gutter-left);
+  padding: 8px 12px;
+  border: 0;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(232, 180, 74, 0.14);
+  color: var(--fg);
+  font: 500 12.5px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.drawer-hint.is-warn {
+  border-left-color: var(--bad);
+  background: rgba(232, 80, 58, 0.16);
+}
+
+.drawer-hint[hidden] {
+  display: none;
+}
+
+.drawer-body[hidden] {
+  display: none;
+}
+
+.drawer-body {
+  padding-top: 8px;
+}
+
+.drawer-status {
+  margin: 0 var(--gutter-right) 8px var(--gutter-left);
+  min-height: 1.4em;
+  font-size: 13px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * One horizontally scrolling row of chips. `touch-action: pan-x` re-enables the browser's
+ * own horizontal scrolling here, which the global `none` would otherwise kill.
+ */
+.chip-row {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0 var(--gutter-right) 0 var(--gutter-left);
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.upgrade-row:not(:empty) {
+  margin-top: 8px;
+}
+
+.chip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* 44px is the smallest comfortable touch target. */
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--chip-edge);
+  border-radius: 10px;
+  background: var(--chip);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chip-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chip-hint {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip.is-selected {
+  border-color: var(--accent);
+  background: #3a5060;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.chip.is-unaffordable {
+  opacity: 0.4;
+}
+
+.chip-upgrade {
+  border-color: var(--good);
+}
+
+.chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* --- Day loop -------------------------------------------------------------------------- */
+
+.primary-button {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 10px 16px 0;
+  min-height: 48px;
+  padding: 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #2a1f07;
+  font: 600 15px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.hud-day {
+  color: var(--fg);
+  opacity: 0.8;
+}
+
+.daybar {
+  padding: 0 16px;
+}
+
+.day-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--chip);
+  overflow: hidden;
+}
+
+.day-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+}
+
+.day-counts {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.day-controls .chip {
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+/* --- Debrief --------------------------------------------------------------------------- */
+
+/*
+ * A `display` declaration beats the UA's `[hidden] { display: none }`, so an explicitly
+ * hidden overlay must opt back out or it scrims the whole game.
+ */
+#modal[hidden],
+#crash[hidden] {
+  display: none;
+}
+
+#modal {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(9, 16, 20, 0.72);
+}
+
+.debrief-panel {
+  width: 100%;
+  max-width: 420px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.debrief-panel h2 {
+  margin: 0 0 14px;
+  font-size: 19px;
+}
+
+.debrief-tally {
+  display: flex;
+  gap: 10px;
+}
+
+.tally-cell {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 4px;
+  border-radius: 10px;
+  background: var(--chip);
+}
+
+.tally-number {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tally-caption {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.tone-good .tally-number { color: var(--good); }
+.tone-warn .tally-number { color: var(--accent); }
+.tone-bad .tally-number { color: var(--bad); }
+.tone-muted .tally-number { opacity: 0.5; }
+
+.debrief-money {
+  margin: 14px 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.debrief-reasons {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.debrief-reasons li {
+  padding: 10px 0;
+  border-top: 1px solid var(--panel-edge);
+  font-size: 14px;
+}
+
+.debrief-reasons em {
+  font-size: 12px;
+  opacity: 0.6;
+  font-style: normal;
+}
+
+.reason-clean {
+  color: var(--good);
+}
+
+.text-button {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 8px 16px 0;
+  min-height: 40px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  opacity: 0.55;
+  font: 500 13px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.text-button.is-armed {
+  background: var(--bad);
+  color: #fff;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.advice-list {
+  margin: 0 var(--gutter-right) 8px var(--gutter-left);
+  padding: 0;
+  list-style: none;
+}
+
+.advice {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.advice-warn {
+  background: rgba(232, 80, 58, 0.16);
+  border-left: 3px solid var(--bad);
+}
+
+.advice-info {
+  background: rgba(232, 180, 74, 0.14);
+  border-left: 3px solid var(--accent);
+}
+
+.forecast {
+  margin: 0 var(--gutter-right) 10px var(--gutter-left);
+}
+
+.forecast-heading {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.forecast-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.forecast-row::-webkit-scrollbar {
+  display: none;
+}
+
+.forecast-pill {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--chip);
+  border: 1px solid var(--chip-edge);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.forecast-pill.is-blocked {
+  border-color: var(--bad);
+  color: #ffc9be;
+  background: rgba(232, 80, 58, 0.18);
+}
+
+.forecast-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--bad);
+}
+
+.forecast-note:empty {
+  display: none;
+}
+
+/* --- Art pass polish -------------------------------------------------------------------- */
+
+/*
+ * Cash moves silently during a day — a fare arriving and a crash penalty look the same in a
+ * static number. A brief flash in the direction of travel is enough to notice without
+ * pulling the eye off the map.
+ */
+.hud-stat {
+  transition: color 120ms ease-out;
+}
+
+.hud-stat.is-up {
+  animation: cash-up 700ms ease-out;
+}
+
+.hud-stat.is-down {
+  animation: cash-down 700ms ease-out;
+}
+
+@keyframes cash-up {
+  0% { color: var(--good); transform: translateY(-2px); }
+  100% { color: var(--accent); transform: none; }
+}
+
+@keyframes cash-down {
+  0% { color: var(--bad); transform: translateY(2px); }
+  100% { color: var(--accent); transform: none; }
+}
+
+/* An aeroplane close to running dry is the one thing worth interrupting the player for. */
+.day-counts.is-critical {
+  color: var(--bad);
+  animation: pulse 900ms ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-stat.is-up,
+  .hud-stat.is-down,
+  .day-counts.is-critical {
+    animation: none;
+  }
+}
+
+.debrief-people {
+  margin: 0 0 14px;
+  font-size: 13px;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.debrief-people.is-over {
+  color: var(--bad);
+  opacity: 1;
+}
+
+.debrief-closing {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(78, 201, 122, 0.14);
+  border-left: 3px solid var(--good);
+  font-size: 13px;
+  line-height: 1.4;
+}

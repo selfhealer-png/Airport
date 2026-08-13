@@ -1,0 +1,123 @@
+import { describe, expect, it } from 'vitest';
+import {
+  clampCamera,
+  createCamera,
+  fitScale,
+  screenToTile,
+  snapScale,
+  zoomAt,
+  MAX_SCALE,
+} from '@/render/camera';
+import { LEVEL_MEADOW } from '@/content/levels';
+import { TILE_PX } from '@/sprites/palette';
+
+const VIEW_W = 390;
+const VIEW_H = 700;
+
+describe('camera clamping', () => {
+  it('keeps the map edge from sliding into view when panned past the corner', () => {
+    const camera = { ...createCamera(), x: -500, y: -500 };
+    clampCamera(camera, LEVEL_MEADOW, VIEW_W, VIEW_H);
+    expect(camera.x).toBe(0);
+    expect(camera.y).toBe(0);
+  });
+
+  it('stops at the far edge rather than showing empty space beyond the map', () => {
+    const camera = { ...createCamera(), x: 99_999, y: 99_999 };
+    clampCamera(camera, LEVEL_MEADOW, VIEW_W, VIEW_H);
+    expect(camera.x).toBe(LEVEL_MEADOW.width * TILE_PX - VIEW_W / camera.scale);
+    expect(camera.y).toBe(LEVEL_MEADOW.height * TILE_PX - VIEW_H / camera.scale);
+  });
+
+  it('centres an axis that is narrower than the viewport', () => {
+    // At scale 1 the 20-tile-wide field is 320 world px against a 390 px viewport.
+    const camera = { ...createCamera(), scale: 1, x: 0, y: 0 };
+    clampCamera(camera, LEVEL_MEADOW, VIEW_W, VIEW_H);
+    expect(camera.x).toBe((LEVEL_MEADOW.width * TILE_PX - VIEW_W) / 2);
+  });
+});
+
+describe('zoom', () => {
+  it('holds the pinch focus point still', () => {
+    const camera = { ...createCamera(), x: 100, y: 100, scale: 2 };
+    const focusX = 195;
+    const focusY = 350;
+    const worldBefore = {
+      x: camera.x + focusX / camera.scale,
+      y: camera.y + focusY / camera.scale,
+    };
+
+    zoomAt(camera, focusX, focusY, 4, 1);
+
+    expect(camera.scale).toBe(4);
+    expect(camera.x + focusX / camera.scale).toBeCloseTo(worldBefore.x, 6);
+    expect(camera.y + focusY / camera.scale).toBeCloseTo(worldBefore.y, 6);
+  });
+
+  /**
+   * The rule is a whole number of *device* pixels per sprite pixel, not a whole number of CSS
+   * pixels. On a 1x display those are the same thing; on a phone they are not, and treating
+   * them as the same is what made the map permanently too wide to fit.
+   */
+  it('snaps to whole device pixels per sprite pixel', () => {
+    const camera = { ...createCamera(), scale: 2 };
+    zoomAt(camera, 0, 0, 2.6, 1);
+    expect(camera.scale).toBe(3);
+
+    // On a 3x screen, a third of a CSS pixel is still exactly one device pixel.
+    expect(snapScale(0.4, 3)).toBeCloseTo(1 / 3, 9);
+    expect(snapScale(0.6, 3)).toBeCloseTo(2 / 3, 9);
+    expect(snapScale(1.1, 3)).toBeCloseTo(1, 9);
+  });
+
+  it('never zooms below one device pixel per sprite pixel', () => {
+    for (const dpr of [1, 2, 3]) {
+      expect(snapScale(0.0001, dpr)).toBeCloseTo(1 / dpr, 9);
+    }
+  });
+
+  it('clamps to the allowed zoom range', () => {
+    const camera = createCamera();
+    zoomAt(camera, 0, 0, 99, 1);
+    expect(camera.scale).toBe(MAX_SCALE);
+    zoomAt(camera, 0, 0, -5, 1);
+    expect(camera.scale).toBe(1);
+  });
+});
+
+/**
+ * The whole field has to be visible on the narrowest phone anyone is likely to use. The map
+ * is 24 tiles wide — 384 world pixels — so at a minimum of one CSS pixel per sprite pixel it
+ * was wider than a 360 px screen and the player could never see their own airport.
+ */
+describe('fitting the field on a phone', () => {
+  const widths = [320, 360, 375, 390, 412, 430];
+
+  for (const width of widths) {
+    it(`fits the whole map across a ${width}px screen at 3x`, () => {
+      const scale = fitScale(LEVEL_MEADOW, width, 700, 3);
+      expect(LEVEL_MEADOW.width * TILE_PX * scale).toBeLessThanOrEqual(width);
+      // ...and is still a whole number of device pixels, so it stays crisp.
+      expect(Math.abs(scale * 3 - Math.round(scale * 3))).toBeLessThan(1e-9);
+    });
+  }
+
+  it('picks the largest zoom that still fits rather than the smallest', () => {
+    // A 390px screen has room for 1 CSS px per sprite pixel; it must not settle for 2/3.
+    expect(fitScale(LEVEL_MEADOW, 390, 700, 3)).toBeCloseTo(1, 9);
+  });
+});
+
+describe('screenToTile', () => {
+  it('maps a screen point to the tile under it', () => {
+    const camera = { x: 0, y: 0, scale: 2 };
+    // One tile is 16 world px, so 32 screen px at scale 2.
+    expect(screenToTile(camera, 0, 0)).toEqual({ x: 0, y: 0 });
+    expect(screenToTile(camera, 33, 65)).toEqual({ x: 1, y: 2 });
+  });
+
+  it('accounts for the camera offset', () => {
+    const camera = { x: 160, y: 320, scale: 2 };
+    expect(screenToTile(camera, 0, 0)).toEqual({ x: 10, y: 20 });
+  });
+});

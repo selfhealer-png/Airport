@@ -1,0 +1,153 @@
+import { describe, expect, it } from 'vitest';
+import { LEVEL_MEADOW } from '@/content/levels';
+import { addRunway, addStand, addTaxiwayRun, createGame } from '@/sim/airport';
+import { airportAdvice, tomorrowsTraffic } from '@/sim/advice';
+import { generateSchedule } from '@/content/schedule';
+import { runDay } from '@/sim/step';
+import { fullyServiced } from './helpers';
+import type { GameState } from '@/sim/types';
+
+/**
+ * Planning advice exists to explain money that is quietly doing nothing. The debrief covers
+ * aeroplanes that were lost; this covers the runway that never gets used and never says why.
+ */
+
+const texts = (state: GameState): string => airportAdvice(state).map((a) => a.text).join(' | ');
+
+function working(): GameState {
+  const state = createGame(LEVEL_MEADOW, 1);
+  addRunway(state.airport, 8, 10, 15, 'grass');
+  addTaxiwayRun(state.airport, 9, 12, 11, 12);
+  addStand(state.airport, 12, 12, 'small');
+  fullyServiced(state.airport);
+  return state;
+}
+
+describe('planning advice', () => {
+  it('tells a brand new player to build a runway', () => {
+    expect(texts(createGame(LEVEL_MEADOW, 1))).toMatch(/drag out a runway/i);
+  });
+
+  it('warns when there is nowhere to park', () => {
+    const state = createGame(LEVEL_MEADOW, 1);
+    addRunway(state.airport, 8, 10, 15, 'grass');
+    expect(texts(state)).toMatch(/no stands/i);
+  });
+
+  it('warns about a runway with no taxiway to a stand', () => {
+    const state = working();
+    addRunway(state.airport, 2, 20, 25, 'grass'); // nowhere near the apron
+    fullyServiced(state.airport);
+    expect(texts(state)).toMatch(/no taxiway to a stand/i);
+  });
+
+  /**
+   * The one that actually bit in play: a second runway is useless until the tower can
+   * sequence more than one aeroplane, and nothing on screen said so.
+   */
+  it('explains that a second runway is idle without a tower', () => {
+    const state = working();
+    addRunway(state.airport, 14, 10, 15, 'grass');
+    addTaxiwayRun(state.airport, 13, 12, 13, 12);
+    addStand(state.airport, 13, 13, 'small');
+    fullyServiced(state.airport);
+
+    expect(texts(state)).toMatch(/only one aeroplane can move at a time/i);
+  });
+
+  it('stops nagging about the tower once it can keep up', () => {
+    const state = working();
+    addRunway(state.airport, 14, 10, 15, 'grass');
+    addTaxiwayRun(state.airport, 13, 12, 13, 12);
+    addStand(state.airport, 13, 13, 'small');
+    state.airport.facilities.push({ id: 'fac1', type: 'tower', x: 4, y: 4, level: 1 });
+    fullyServiced(state.airport);
+
+    expect(texts(state)).not.toMatch(/aeroplane can move at a time/i);
+  });
+
+  it('warns about a stand nothing can taxi to', () => {
+    const state = working();
+    addStand(state.airport, 18, 30, 'large');
+    fullyServiced(state.airport);
+    expect(texts(state)).toMatch(/no taxiway back to a runway/i);
+  });
+
+  it('says nothing alarming about a small but correct airport', () => {
+    const advice = airportAdvice(working());
+    expect(advice.filter((a) => a.tone === 'warn')).toEqual([]);
+  });
+});
+
+describe('pacing', () => {
+  it('resolves a full day of traffic quickly enough to stay watchable', () => {
+    // An airport built for the traffic. One that is under-built *should* run long and
+    // divert aeroplanes; that is the puzzle, not a pacing bug.
+    const state = working();
+    addTaxiwayRun(state.airport, 11, 12, 11, 14);
+    addStand(state.airport, 12, 14, 'small');
+    fullyServiced(state.airport);
+    const schedule = Array.from({ length: 6 }, (_, i) => ({
+      atSeconds: i * 4,
+      classId: 'light' as const,
+    }));
+
+    const day = runDay(state, schedule);
+
+    // A day must finish soon after its last arrival, not run on for minutes afterwards.
+    expect(day.elapsed).toBeLessThan(90);
+    expect(day.events.filter((e) => e.outcome === 'landed').length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The forecast is the answer to "how was I supposed to know gravel was coming?". It shares
+ * `structuralBlock` with the assignment pass, and these tests exist to keep the two honest:
+ * a forecast that promised traffic the simulation then turned away would be worse than none.
+ */
+describe('traffic forecast', () => {
+  function grassStrip(): GameState {
+    const state = working();
+    // Well past the point where the ladder has left a six-tile *grass* strip behind, so the
+    // forecast has something real to complain about.
+    state.day = 20;
+    return state;
+  }
+
+  it('counts every class booked in for the day', () => {
+    const state = grassStrip();
+    const forecast = tomorrowsTraffic(state);
+    const scheduled = generateSchedule(state.day, state.reputation, state.seed);
+
+    expect(forecast.reduce((sum, e) => sum + e.count, 0)).toBe(scheduled.length);
+    // Most numerous first, so the pill the player reads first is the one that matters most.
+    const counts = forecast.map((e) => e.count);
+    expect([...counts].sort((a, b) => b - a)).toEqual(counts);
+  });
+
+  it('flags a class this airport cannot take, and says why', () => {
+    const state = grassStrip();
+    const forecast = tomorrowsTraffic(state);
+
+    // A short grass strip takes light aircraft and nothing heavier, and the forecast has to
+    // say which — naming the constraint, not just that something is wrong.
+    const blocked = forecast.filter((e) => e.problem);
+    expect(blocked.length).toBeGreaterThan(0);
+    expect(blocked.every((e) => /runway|stand|fuel|road/i.test(e.problem ?? ''))).toBe(true);
+    expect(forecast.find((e) => e.classId === 'light')?.problem ?? null).toBeNull();
+  });
+
+  it('agrees with what the day actually does', () => {
+    // Whatever the forecast calls unservable must be exactly what the day diverts, or the
+    // planning screen is lying to the player.
+    const state = grassStrip();
+    const blocked = new Set(
+      tomorrowsTraffic(state).filter((e) => e.problem).map((e) => e.classId),
+    );
+
+    const day = runDay(state, generateSchedule(state.day, state.reputation, state.seed));
+    for (const event of day.events) {
+      if (blocked.has(event.classId)) expect(event.outcome).not.toBe('landed');
+    }
+  });
+});
