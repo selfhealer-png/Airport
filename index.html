@@ -8,6 +8,14 @@
     />
     <meta name="theme-color" content="#1b2a33" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <!--
+      iOS has no install prompt: a PWA gets there through Share > Add to Home Screen, and
+      whether it then launches fullscreen or in a Safari tab depends on this tag. Safari 17
+      honours the standard `mobile-web-app-capable` above, but everything before it needs the
+      prefixed one, and there is no cost to keeping both.
+    -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Airfield" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="description" content="Build an airport so the planes can land." />
     <link rel="icon" href="favicon.png" />
