@@ -1,7 +1,7 @@
 import { aircraftClass, isRotorcraft } from '@/content/aircraft';
-import { terminalLevel, towerLevel } from '@/content/buildings';
+import { TERMINAL_LEVELS, terminalLevel, towerLevel } from '@/content/buildings';
 import { arrivalsForDay, generateSchedule } from '@/content/schedule';
-import { workingTerminalLevel, workingTowerLevel } from './airport';
+import { terminalsOf, workingTerminalCapacity, workingTowerLevel } from './airport';
 import { structuralBlock } from './assignment';
 import { buildServices, type Services } from './connectivity';
 import { explainReason } from './step';
@@ -160,23 +160,34 @@ function rotorAdvice(state: GameState): Advice[] {
   return advice;
 }
 
-/** Whether the terminal can cope with what is booked in, and whether retail is paying. */
+/** Whether the terminals can cope with what is booked in, and whether retail is paying. */
 function terminalAdvice(state: GameState, services: Services): Advice[] {
   const advice: Advice[] = [];
-  const level = terminalLevel(workingTerminalLevel(state.airport, services));
+  // Pooled: capacity and shop slots are what every working terminal adds up to, not what the
+  // best one manages on its own.
+  const terminals = workingTerminalCapacity(state.airport, services);
+  const count = terminalsOf(state.airport).length;
 
   const expected = generateSchedule(state.day, state.seed).reduce(
     (sum, arrival) => sum + aircraftClass(arrival.classId).passengers,
     0,
   );
 
-  if (expected > level.passengerCapacity) {
+  if (expected > terminals.passengerCapacity) {
+    // Once every terminal is at its ceiling, "upgrade it" is no longer advice — the only way
+    // past 2,600 a day is a second building, and the player has no reason to guess that.
+    const maxed =
+      count > 0 &&
+      terminalsOf(state.airport).every((t) => t.level >= TERMINAL_LEVELS.length - 1);
     advice.push({
       tone: 'warn',
       text:
-        `About ${expected} passengers are booked in and the terminal can process ` +
-        `${level.passengerCapacity}. The overflow still lands, but you earn only the landing ` +
-        'fee for them and they remember it. Upgrade the terminal.',
+        `About ${expected} passengers are booked in and your terminals can process ` +
+        `${terminals.passengerCapacity}. The overflow still lands, but you earn only the ` +
+        'landing fee for them. ' +
+        (maxed
+          ? 'Every terminal is fully upgraded, so the only way to take more is another one.'
+          : 'Upgrade a terminal.'),
     });
   }
 
@@ -185,14 +196,14 @@ function terminalAdvice(state: GameState, services: Services): Advice[] {
     (f) => f.type === 'shop' && services.roadServed.has(f.id),
   ).length;
 
-  if (shopsBuilt > level.shopSlots) {
+  if (shopsBuilt > terminals.shopSlots) {
     advice.push({
       tone: 'warn',
       text:
-        `Your terminal has room for ${level.shopSlots} shop${level.shopSlots === 1 ? '' : 's'}` +
+        `You have room for ${terminals.shopSlots} shop${terminals.shopSlots === 1 ? '' : 's'}` +
         ` and you have built ${shopsBuilt}. The extras trade nothing.`,
     });
-  } else if (shopsBuilt === 0 && level.shopSlots > 0 && expected > 80) {
+  } else if (shopsBuilt === 0 && terminals.shopSlots > 0 && expected > 80) {
     advice.push({
       tone: 'info',
       text: 'Shops next to the terminal earn on every passenger who walks past. You have none.',

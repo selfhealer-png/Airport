@@ -295,20 +295,28 @@ export function createDrawer(
     );
   }
 
-  /** Tower and terminal upgrade in place, so they get their own buttons once built. */
+  /**
+   * Tower and terminal upgrade in place, so they get a button each once built.
+   *
+   * One button per *instance*, not per type: an airport may have several terminals, and
+   * "upgrade the terminal" stops being a question with an answer once it does. They are
+   * numbered in build order so two buttons for the same type can be told apart.
+   */
   function renderUpgrades(current: GameState): void {
     const items: HTMLElement[] = [];
+    const levelled = current.airport.facilities.filter((f) => LEVELLED_FACILITIES.has(f.type));
 
-    for (const type of ['tower', 'terminal'] as const) {
-      const facility = facilityOf(current.airport, type);
-      if (!facility) continue;
-
-      const check = checkUpgradeFacility(current, type);
+    for (const facility of levelled) {
+      const check = checkUpgradeFacility(current, facility.id);
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'chip chip-upgrade';
 
-      const label = type === 'tower' ? 'Tower' : 'Terminal';
+      const sameType = levelled.filter((f) => f.type === facility.type);
+      const base = facility.type === 'tower' ? 'Tower' : 'Terminal';
+      const label =
+        sameType.length > 1 ? `${base} ${sameType.indexOf(facility) + 1}` : base;
+
       const hint = isAffordableQuote(check)
         ? `£${check.cost.toLocaleString()}`
         : explainBuildError(check);
@@ -318,12 +326,12 @@ export function createDrawer(
       button.disabled = !isAffordableQuote(check);
 
       button.addEventListener('click', () => {
-        const fresh = checkUpgradeFacility(current, type);
+        const fresh = checkUpgradeFacility(current, facility.id);
         if (!isAffordableQuote(fresh)) return;
         handlers.onBeforeChange?.();
-        applyUpgradeFacility(current, fresh, type);
+        applyUpgradeFacility(current, fresh, facility.id);
         api.refresh(current);
-        api.setStatus(`${label} upgraded to level ${facilityOf(current.airport, type)?.level}.`);
+        api.setStatus(`${label} upgraded to level ${facility.level}.`);
       });
 
       items.push(button);

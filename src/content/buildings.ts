@@ -48,6 +48,17 @@ export const TERMINAL_LEVELS: readonly TerminalLevel[] = [
   { level: 4, cost: 110_000, fareMultiplier: 1.6, passengerCapacity: 2_600, shopSlots: 4 },
 ];
 
+/**
+ * What each *additional* terminal costs, as a multiple of a level-1 terminal, indexed by how
+ * many the airport already has.
+ *
+ * Capacity pools across terminals, so without this a second level-1 building (£900) is a far
+ * cheaper way to buy 220 passengers a day than upgrading to level 2 (£5,500) — and the whole
+ * upgrade ladder becomes strictly worse than building sheds. Rising, so the fourth terminal
+ * is a considered decision rather than loose change.
+ */
+export const ADDITIONAL_TERMINAL_COST_MULTIPLIER: readonly number[] = [1, 3, 6, 10];
+
 export function towerLevel(level: number): TowerLevel {
   return TOWER_LEVELS[Math.min(Math.max(level, 0), TOWER_LEVELS.length - 1)]!;
 }
@@ -71,9 +82,12 @@ export const SHOP_REVENUE_PER_PASSENGER = 3;
 /**
  * What one passenger is worth. Shops multiply the value of terminal capacity rather than
  * replacing it, so the two upgrades pull in the same direction instead of competing.
+ *
+ * Takes the multiplier rather than a `TerminalLevel`, because with several terminals pooled
+ * there is no single level to hand it — the rate is a capacity-weighted blend of all of them.
  */
-export function passengerRevenue(terminal: TerminalLevel, shops: number): number {
-  return (PASSENGER_FARE + shops * SHOP_REVENUE_PER_PASSENGER) * terminal.fareMultiplier;
+export function passengerRevenue(fareMultiplier: number, shops: number): number {
+  return (PASSENGER_FARE + shops * SHOP_REVENUE_PER_PASSENGER) * fareMultiplier;
 }
 
 /** Cash penalty for a crash, on top of the lost fare. */

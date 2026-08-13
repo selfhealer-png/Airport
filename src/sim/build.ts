@@ -1,4 +1,9 @@
-import { terminalLevel, TERMINAL_LEVELS, TOWER_LEVELS } from '@/content/buildings';
+import {
+  ADDITIONAL_TERMINAL_COST_MULTIPLIER,
+  terminalLevel,
+  TERMINAL_LEVELS,
+  TOWER_LEVELS,
+} from '@/content/buildings';
 import {
   DEMOLITION_REFUND,
   FACILITY_COST,
@@ -11,7 +16,7 @@ import {
   STAND_COST,
   TAXIWAY_COST_PER_TILE,
 } from '@/content/costs';
-import { facilityOf, shopsOf } from './airport';
+import { facilityOf, shopsOf, terminalsOf } from './airport';
 import {
   isBuildable,
   runwayLength,
@@ -324,6 +329,20 @@ export function facilityCost(type: FacilityType, level: number): number {
   return FACILITY_COST[type];
 }
 
+/**
+ * What a *new* terminal costs, given how many there already are.
+ *
+ * Flat per-instance pricing would make a second level-1 terminal a far cheaper way to add
+ * capacity than upgrading the one you have, and upgrading would become strictly worse than
+ * spamming the cheapest building in the game. The multiplier keeps both moves on the table.
+ * Applied only when placing a new terminal; upgrading an existing one is priced from
+ * `TERMINAL_LEVELS` exactly as it always was.
+ */
+export function newTerminalCost(existing: number): number {
+  const index = Math.min(existing, ADDITIONAL_TERMINAL_COST_MULTIPLIER.length - 1);
+  return Math.round(facilityCost('terminal', 1) * ADDITIONAL_TERMINAL_COST_MULTIPLIER[index]!);
+}
+
 /** Places a facility for the first time. Tower and terminal arrive at level 1. */
 export function checkFacility(
   state: GameState,
@@ -335,31 +354,48 @@ export function checkFacility(
     // "Inside the terminal" on a tile grid means orthogonally touching it. Refusing outright
     // rather than letting it be built and quietly earn nothing: £1,800 is too much to lose
     // to a placement the game could simply have declined.
-    const terminal = facilityOf(state.airport, 'terminal');
-    if (!terminal) return 'needs-terminal';
-    if (Math.abs(terminal.x - x) + Math.abs(terminal.y - y) !== 1) return 'needs-terminal';
-    if (shopsOf(state.airport).length >= terminalLevel(terminal.level).shopSlots) {
-      return 'no-shop-slot';
+    // With more than one terminal, "inside the terminal" means touching any of them, and
+    // the slots sum across all of them. Gated on what is *built*, not what is working: you
+    // are allowed to build things that do not work yet, and `airportAdvice()` is what tells
+    // you they are dead weight.
+    const terminals = terminalsOf(state.airport);
+    if (terminals.length === 0) return 'needs-terminal';
+    if (!terminals.some((t) => Math.abs(t.x - x) + Math.abs(t.y - y) === 1)) {
+      return 'needs-terminal';
     }
-  } else if (facilityOf(state.airport, type)) {
+    const slots = terminals.reduce((sum, t) => sum + terminalLevel(t.level).shopSlots, 0);
+    if (shopsOf(state.airport).length >= slots) return 'no-shop-slot';
+  } else if (type !== 'terminal' && facilityOf(state.airport, type)) {
+    // Terminals are no longer unique: capacity pools across them, so a second building is
+    // how an airport gets past level 4's ceiling. Everything else is still one per airport.
     return 'already-built';
   }
 
   const problem = tileIsFree(state.airport, x, y);
   if (problem) return problem;
+
+  if (type === 'terminal') {
+    return afford(state, newTerminalCost(terminalsOf(state.airport).length));
+  }
   return afford(state, facilityCost(type, LEVELLED_FACILITIES.has(type) ? 1 : 0));
 }
 
-export function checkUpgradeFacility(state: GameState, type: FacilityType): BuildCheck {
-  const facility = facilityOf(state.airport, type);
+/**
+ * Upgrades one facility, named by id rather than by type.
+ *
+ * Keying on type only ever worked because there was exactly one of each. With several
+ * terminals on the airport, "upgrade the terminal" is not a question with an answer.
+ */
+export function checkUpgradeFacility(state: GameState, facilityId: string): BuildCheck {
+  const facility = state.airport.facilities.find((f) => f.id === facilityId);
   if (!facility) return 'nothing-there';
-  if (!LEVELLED_FACILITIES.has(type)) return 'max-level';
+  if (!LEVELLED_FACILITIES.has(facility.type)) return 'max-level';
 
-  const levels = type === 'tower' ? TOWER_LEVELS : TERMINAL_LEVELS;
+  const levels = facility.type === 'tower' ? TOWER_LEVELS : TERMINAL_LEVELS;
   const next = facility.level + 1;
   if (next >= levels.length) return 'max-level';
 
-  return afford(state, facilityCost(type, next));
+  return afford(state, facilityCost(facility.type, next));
 }
 
 // --- Applying ---------------------------------------------------------------------------
@@ -531,9 +567,9 @@ export function applyFacility(
 export function applyUpgradeFacility(
   state: GameState,
   quote: BuildQuote,
-  type: FacilityType,
+  facilityId: string,
 ): void {
-  const facility = facilityOf(state.airport, type);
+  const facility = state.airport.facilities.find((f) => f.id === facilityId);
   if (!facility) return;
   spend(state, quote);
   facility.level += 1;
@@ -564,11 +600,14 @@ export function checkDemolish(state: GameState, x: number, y: number): BuildChec
   const facility = airport.facilities.find((f) => f.x === x && f.y === y);
   if (facility) {
     const paid = LEVELLED_FACILITIES.has(facility.type)
-      ? // Levelled facilities refund every level bought so far.
-        Array.from({ length: facility.level }, (_, i) => facilityCost(facility.type, i + 1)).reduce(
-          (sum, value) => sum + value,
-          0,
-        )
+      ? // Levelled facilities refund every level bought so far. A terminal's first level was
+        // priced against how many already existed when it went up, so refund what was
+        // actually paid rather than the flat list price.
+        Array.from({ length: facility.level }, (_, i) =>
+          facility.type === 'terminal' && i === 0
+            ? newTerminalCost(terminalsOf(airport).indexOf(facility))
+            : facilityCost(facility.type, i + 1),
+        ).reduce((sum, value) => sum + value, 0)
       : facilityCost(facility.type, 0);
     return { cost: -Math.round(paid * DEMOLITION_REFUND) };
   }

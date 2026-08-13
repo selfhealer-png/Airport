@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { aircraftClass } from '@/content/aircraft';
 import { PASSENGER_FARE, SHOP_REVENUE_PER_PASSENGER, terminalLevel } from '@/content/buildings';
 import { LEVEL_MEADOW } from '@/content/levels';
-import { addRunway, addStand, addTaxiwayRun, createGame } from '@/sim/airport';
+import {
+  addRunway,
+  addStand,
+  addTaxiwayRun,
+  createGame,
+  workingShops,
+  workingTerminalCapacity,
+} from '@/sim/airport';
+import { buildServices } from '@/sim/connectivity';
 import { runDay } from '@/sim/step';
 import { summariseDay } from '@/ui/debrief';
 import type { GameState, ScheduledArrival } from '@/sim/types';
@@ -19,8 +27,14 @@ const arrival = (atSeconds: number, classId: ScheduledArrival['classId']): Sched
   classId,
 });
 
-/** A jet-capable airport with a terminal of the given level and some shops beside it. */
-function airport(terminalLevelValue: number, shops = 0): GameState {
+/**
+ * A jet-capable airport with terminals of the given levels and some shops beside the first.
+ *
+ * Takes a list rather than one level, because terminal capacity pools across every building:
+ * most of these tests want one terminal, but the ones that matter most want two.
+ */
+function airport(levels: number | number[], shops = 0): GameState {
+  const wanted = Array.isArray(levels) ? levels : [levels];
   const state = createGame(LEVEL_MEADOW, 42);
   addRunway(state.airport, 8, 4, 21, 'asphalt'); // 18 tiles: takes anything
   addTaxiwayRun(state.airport, 9, 10, 11, 10);
@@ -32,8 +46,10 @@ function airport(terminalLevelValue: number, shops = 0): GameState {
     { id: 'f-fuel', type: 'fuel-farm', x: 2, y: 2, level: 0 },
     { id: 'f-fire', type: 'fire-station', x: 3, y: 2, level: 0 },
     { id: 'f-tower', type: 'tower', x: 4, y: 2, level: 3 },
-    { id: 'f-term', type: 'terminal', x: 5, y: 2, level: terminalLevelValue },
   );
+  wanted.forEach((level, i) => {
+    state.airport.facilities.push({ id: `f-term${i}`, type: 'terminal', x: 5 + i * 2, y: 2, level });
+  });
   for (let i = 0; i < shops; i++) {
     state.airport.facilities.push({ id: `s${i}`, type: 'shop', x: 5, y: 1, level: 0 });
   }
@@ -150,5 +166,102 @@ describe('retail', () => {
     const withTwo = (PASSENGER_FARE + 2 * SHOP_REVENUE_PER_PASSENGER) * level.fareMultiplier;
 
     expect(withTwo).toBeGreaterThan(withoutShops);
+  });
+});
+
+/**
+ * Terminal capacity pools across buildings, because level 4 caps at 2,600 passengers a day
+ * and the late campaign books over three thousand — without a second terminal the airport
+ * simply stops growing.
+ *
+ * The fare multiplier is the part that must *not* pool, and these are the tests that say so.
+ */
+describe('several terminals', () => {
+  const capacityOf = (state: GameState) =>
+    workingTerminalCapacity(state.airport, buildServices(state.airport));
+
+  it('adds their passenger capacity together', () => {
+    expect(capacityOf(airport([2, 2])).passengerCapacity).toBe(
+      terminalLevel(2).passengerCapacity * 2,
+    );
+  });
+
+  it('adds their shop slots together', () => {
+    expect(capacityOf(airport([1, 2])).shopSlots).toBe(
+      terminalLevel(1).shopSlots + terminalLevel(2).shopSlots,
+    );
+  });
+
+  it('blends the fare rate rather than summing it', () => {
+    // Summing would make two level-1 terminals worth 2.3x — with doubled capacity, roughly
+    // four times the revenue for two of the cheapest buildings in the game.
+    const two = capacityOf(airport([1, 1])).fareMultiplier;
+    expect(two).toBeCloseTo(terminalLevel(1).fareMultiplier, 5);
+  });
+
+  /**
+   * The ordering that is the entire reason for weighting instead of summing: at the same
+   * total capacity, two cheap terminals must earn *less* per passenger than one good one.
+   * If this ever inverts, upgrading becomes pointless and the ladder collapses.
+   */
+  it('earns less per passenger than one better terminal of the same capacity', () => {
+    // Level 1 is 220 passengers at 1.15x; level 2 is 560 at 1.30x. Three level-1 terminals
+    // come to 660 — slightly more capacity than one level 2 — and must still earn a lower
+    // rate on every head that walks through.
+    const spread = capacityOf(airport([1, 1, 1]));
+    const single = capacityOf(airport(2));
+
+    expect(spread.passengerCapacity).toBeGreaterThan(single.passengerCapacity);
+    expect(spread.fareMultiplier).toBeLessThan(single.fareMultiplier);
+  });
+
+  it('weights the blend by capacity, so the bigger terminal moves the rate more', () => {
+    // A level-4 terminal (2,600) beside a level-1 one (220) should sit close to level 4's
+    // rate, not halfway between the two.
+    const mixed = capacityOf(airport([4, 1])).fareMultiplier;
+    const midpoint = (terminalLevel(4).fareMultiplier + terminalLevel(1).fareMultiplier) / 2;
+
+    expect(mixed).toBeGreaterThan(midpoint);
+    expect(mixed).toBeLessThan(terminalLevel(4).fareMultiplier);
+  });
+
+  it('processes more of one aeroplane than a single terminal could', () => {
+    // The wiring, measured through the simulation rather than the accessor: `land()` has to
+    // spend the *pooled* budget. One aeroplane, so nothing else can be the constraint — a
+    // busier schedule ends up measuring the runway or the apron instead.
+    const carried = aircraftClass('widebody').passengers;
+    const capacity = terminalLevel(1).passengerCapacity;
+    expect(carried).toBeGreaterThan(capacity);
+    expect(carried).toBeLessThan(capacity * 2);
+
+    const one = summariseDay(runDay(airport(1), [arrival(0, 'widebody')]));
+    const two = summariseDay(runDay(airport([1, 1]), [arrival(0, 'widebody')]));
+
+    // One terminal turns the overflow away at the door; two get the whole aeroplane through.
+    expect(one.passengers).toBe(capacity);
+    expect(one.passengersTurnedAway).toBe(carried - capacity);
+    expect(two.passengers).toBe(carried);
+    expect(two.passengersTurnedAway).toBe(0);
+  });
+
+  it('ignores a terminal with no road to it', () => {
+    // Built is not working. A second terminal nothing can drive to adds no capacity, exactly
+    // as an unroaded tower staffs nobody.
+    const state = airport([2]);
+    state.airport.facilities.push({ id: 'f-orphan', type: 'terminal', x: 20, y: 38, level: 4 });
+    // No `fullyServiced` re-run, so the new one sits on bare grass.
+
+    expect(capacityOf(state).passengerCapacity).toBe(terminalLevel(2).passengerCapacity);
+  });
+
+  it('counts a shop touching any working terminal', () => {
+    // "Inside the terminal" has to mean any of them once there is more than one, or a shop
+    // beside the second building would quietly trade nothing.
+    const state = airport([1, 1]);
+    state.airport.facilities.push({ id: 's-far', type: 'shop', x: 8, y: 2, level: 0 });
+    fullyServiced(state.airport);
+
+    // The second terminal is at x=7, so the shop at x=8 touches it and nothing else.
+    expect(workingShops(state.airport, buildServices(state.airport))).toBeGreaterThan(0);
   });
 });

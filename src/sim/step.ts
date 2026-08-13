@@ -3,13 +3,12 @@ import {
   CRASH_COST,
   FUEL_FARM_TURNAROUND_FACTOR,
   passengerRevenue,
-  terminalLevel,
   towerLevel,
 } from '@/content/buildings';
 import {
   hasWorkingFuelFarm,
   workingShops,
-  workingTerminalLevel,
+  workingTerminalCapacity,
   workingTowerLevel,
 } from './airport';
 import { assignHoldingAircraft } from './assignment';
@@ -208,17 +207,19 @@ function record(state: GameState, day: DayState, event: DayEvent): void {
  */
 function land(state: GameState, day: DayState, aircraft: Aircraft): void {
   const spec = aircraftClass(aircraft.classId);
-  const level = terminalLevel(workingTerminalLevel(state.airport, day.services));
+  // Pooled across every working terminal: capacity sums, the fare rate is a capacity-weighted
+  // blend. See `workingTerminalCapacity`.
+  const terminals = workingTerminalCapacity(state.airport, day.services);
 
-  const room = Math.max(0, level.passengerCapacity - day.passengersHandled);
+  const room = Math.max(0, terminals.passengerCapacity - day.passengersHandled);
   const processed = Math.min(spec.passengers, room);
   const turnedAway = spec.passengers - processed;
   day.passengersHandled += processed;
   day.passengersTurnedAway += turnedAway;
 
   const shops = workingShops(state.airport, day.services);
-  const fare = Math.round(spec.fare * level.fareMultiplier);
-  const fromPassengers = Math.round(processed * passengerRevenue(level, shops));
+  const fare = Math.round(spec.fare * terminals.fareMultiplier);
+  const fromPassengers = Math.round(processed * passengerRevenue(terminals.fareMultiplier, shops));
 
   record(state, day, {
     aircraftId: aircraft.id,

@@ -2,7 +2,13 @@ import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import { terminalLevel, TERMINAL_LEVELS, towerLevel, TOWER_LEVELS } from '@/content/buildings';
 import { LEVEL_MEADOW } from '@/content/levels';
 import { arrivalsForDay, CAMPAIGN_DAYS, generateSchedule } from '@/content/schedule';
-import { createGame, facilityOf } from '@/sim/airport';
+import {
+  createGame,
+  facilityOf,
+  terminalsOf,
+  workingTerminalCapacity,
+} from '@/sim/airport';
+import { buildServices } from '@/sim/connectivity';
 import { tomorrowsTraffic } from '@/sim/advice';
 import {
   applyDemolish,
@@ -94,6 +100,15 @@ const BUILDING_X = 16;
 const BUILDING_ROAD_X = 17;
 const HELIPAD_X = 18;
 const HELIPAD_ROWS = [6, 8, 10, 12] as const;
+
+/**
+ * Rows on the building column that terminals go on.
+ *
+ * Several, because terminal capacity pools: once every terminal is at level 4 the only way
+ * past 2,600 passengers a day is another building, and the late campaign books over three
+ * thousand. Spaced so each one still has a free tile beside it for a shop.
+ */
+const TERMINAL_ROWS = [8, 12, 16, 28] as const;
 const STAND_ROWS = [10, 13, 16, 19, 22, 25, 28] as const;
 
 /** Spends only if the check passes and the money is there. Returns whether it built. */
@@ -268,14 +283,31 @@ function addPad(state: GameState): boolean {
 
 /** Places a facility on the building row, with the road that switches it on. */
 function place(state: GameState, type: 'tower' | 'terminal' | 'fuel-farm' | 'fire-station'): void {
-  const row = { tower: 4, terminal: 8, 'fuel-farm': 20, 'fire-station': 24 }[type];
+  const row = { tower: 4, terminal: TERMINAL_ROWS[0], 'fuel-farm': 20, 'fire-station': 24 }[type];
+  placeAt(state, type, row);
+}
+
+function placeAt(
+  state: GameState,
+  type: 'tower' | 'terminal' | 'fuel-farm' | 'fire-station',
+  row: number,
+): boolean {
   const built = tryBuild(checkFacility(state, type, BUILDING_X, row), (q) =>
     applyFacility(state, q, type, BUILDING_X, row),
   );
-  if (!built) return;
+  if (!built) return false;
   tryBuild(checkRoadRun(state, BUILDING_ROAD_X, 0, BUILDING_ROAD_X, row), (q) =>
     applyRoadRun(state, q, BUILDING_ROAD_X, 0, BUILDING_ROAD_X, row),
   );
+  return true;
+}
+
+/** The next terminal, on the next free row of the building column. */
+function placeTerminal(state: GameState): boolean {
+  const row = TERMINAL_ROWS.find(
+    (r) => !state.airport.facilities.some((f) => f.x === BUILDING_X && f.y === r),
+  );
+  return row === undefined ? false : placeAt(state, 'terminal', row);
 }
 
 /**
@@ -405,21 +437,32 @@ function plan(state: GameState): void {
   if (!tower) {
     place(state, 'tower');
   } else if (tower.level < TOWER_LEVELS.length - 1 && arrivals > movements * 5) {
-    tryBuild(checkUpgradeFacility(state, 'tower'), (q) => applyUpgradeFacility(state, q, 'tower'));
+    tryBuild(checkUpgradeFacility(state, tower.id), (q) =>
+      applyUpgradeFacility(state, q, tower.id),
+    );
   }
 
-  // Terminal: upgrade before the ceiling is hit, because a day spent turning people away is
-  // a day of income already lost.
-  const terminal = facilityOf(state.airport, 'terminal');
-  if (!terminal) {
+  /*
+   * Terminals: upgrade before the ceiling is hit, because a day spent turning people away is
+   * a day of income already lost — and once every terminal is maxed, build another.
+   *
+   * The order matters and is the point of the cost multiplier. Upgrading is tried first at
+   * every level, so a second building is what the auto-player reaches for when it has run out
+   * of ladder, not a cheaper substitute for climbing it.
+   */
+  const terminals = terminalsOf(state.airport);
+  const capacity = workingTerminalCapacity(state.airport, buildServices(state.airport));
+  if (terminals.length === 0) {
     place(state, 'terminal');
-  } else if (
-    expected > terminalLevel(terminal.level).passengerCapacity * 0.6 &&
-    terminal.level < TERMINAL_LEVELS.length - 1
-  ) {
-    tryBuild(checkUpgradeFacility(state, 'terminal'), (q) =>
-      applyUpgradeFacility(state, q, 'terminal'),
-    );
+  } else if (expected > capacity.passengerCapacity * 0.6) {
+    const upgradable = terminals.find((t) => t.level < TERMINAL_LEVELS.length - 1);
+    if (upgradable) {
+      tryBuild(checkUpgradeFacility(state, upgradable.id), (q) =>
+        applyUpgradeFacility(state, q, upgradable.id),
+      );
+    } else {
+      placeTerminal(state);
+    }
   }
 
   // Shops last: they multiply passenger income rather than creating it.
@@ -484,7 +527,7 @@ for (let day = 1; day <= days; day++) {
   console.log(`Day ${day}  [${state.airport.runways.length}rwy ${length}t ${runway?.surface ?? '-'}, ` +
     `${state.airport.stands.length} stands, ` +
     `${state.airport.helipads.length} pads, ` +
-    `T${facilityOf(state.airport, 'terminal')?.level ?? 0}/` +
+    `T${terminalsOf(state.airport).map((t) => t.level).join('+') || 0}/` +
     `C${facilityOf(state.airport, 'tower')?.level ?? 0}]`);
   console.log(summarise(result));
   const served = state.scheduledTotal === 0

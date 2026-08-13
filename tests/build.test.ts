@@ -169,20 +169,44 @@ describe('facilities', () => {
 
   it('upgrades a tower up to its ceiling, then stops', () => {
     const state = game(1_000_000);
-    applyFacility(state, quote(checkFacility(state, 'tower', 4, 4)), 'tower', 4, 4);
+    const id = applyFacility(state, quote(checkFacility(state, 'tower', 4, 4)), 'tower', 4, 4);
 
     for (let level = 2; level < TOWER_LEVELS.length; level++) {
-      applyUpgradeFacility(state, quote(checkUpgradeFacility(state, 'tower')), 'tower');
+      applyUpgradeFacility(state, quote(checkUpgradeFacility(state, id)), id);
     }
 
     expect(towerLevelOf(state.airport)).toBe(TOWER_LEVELS.length - 1);
-    expect(checkUpgradeFacility(state, 'tower')).toBe('max-level');
+    expect(checkUpgradeFacility(state, id)).toBe('max-level');
   });
 
   it('will not upgrade a facility that has no levels', () => {
     const state = game();
-    applyFacility(state, quote(checkFacility(state, 'fuel-farm', 4, 4)), 'fuel-farm', 4, 4);
-    expect(checkUpgradeFacility(state, 'fuel-farm')).toBe('max-level');
+    const id = applyFacility(
+      state,
+      quote(checkFacility(state, 'fuel-farm', 4, 4)),
+      'fuel-farm',
+      4,
+      4,
+    );
+    expect(checkUpgradeFacility(state, id)).toBe('max-level');
+  });
+
+  it('names the facility by id, so several of a type can be upgraded independently', () => {
+    // Upgrades used to be keyed by type, which only worked while there was one of each.
+    // With two terminals, "upgrade the terminal" has no answer — this is what pins that.
+    const state = game(1_000_000);
+    const first = applyFacility(state, quote(checkFacility(state, 'terminal', 4, 4)), 'terminal', 4, 4);
+    const second = applyFacility(state, quote(checkFacility(state, 'terminal', 9, 9)), 'terminal', 9, 9);
+
+    applyUpgradeFacility(state, quote(checkUpgradeFacility(state, second)), second);
+
+    const level = (id: string) => state.airport.facilities.find((f) => f.id === id)!.level;
+    expect(level(first)).toBe(1);
+    expect(level(second)).toBe(2);
+  });
+
+  it('refuses to upgrade an id that is not there', () => {
+    expect(checkUpgradeFacility(game(), 'fac999')).toBe('nothing-there');
   });
 });
 
