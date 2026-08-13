@@ -106,6 +106,19 @@ describe('single-tile tools', () => {
     expect(occupantAt(state.airport, 4, 4)).toBe(null);
   });
 
+  it('places a helipad under the finger, like a stand rather than like a runway', () => {
+    // A pad is one tile and has no size and no drag, so it must follow the finger to where
+    // it is released — not lay a column from where the drag started.
+    const state = game();
+    const tool: Tool = { kind: 'helipad' };
+    const placement = drag(state, tool, [4, 4], [7, 9]);
+
+    expect(placement.tiles).toEqual([{ x: 7, y: 9 }]);
+    commitPlacement(state, tool, placement);
+    expect(occupantAt(state.airport, 7, 9)).toBe('helipad');
+    expect(state.airport.helipads).toHaveLength(1);
+  });
+
   it('places a facility and the simulation sees it immediately', () => {
     const state = game();
     const tool: Tool = { kind: 'facility', type: 'tower' };

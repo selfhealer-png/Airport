@@ -20,7 +20,7 @@ import type {
  * whole aircraft state machine.
  */
 
-export const SNAPSHOT_VERSION = 5;
+export const SNAPSHOT_VERSION = 6;
 
 export interface Snapshot {
   readonly version: number;
@@ -41,6 +41,8 @@ export interface Snapshot {
     use: RunwayUse;
   }>;
   readonly stands: ReadonlyArray<{ id: string; x: number; y: number; size: StandSize }>;
+  /** `reservedBy` is day state, rebuilt by `startDay`, so it is deliberately not stored. */
+  readonly helipads: ReadonlyArray<{ id: string; x: number; y: number }>;
   /** Row-major tile indices that carry taxiway. Sparse, so a mostly-empty field is tiny. */
   readonly taxiways: readonly number[];
   /** Row-major tile indices that carry road, stored the same way. */
@@ -87,6 +89,7 @@ export function toSnapshot(state: GameState): Snapshot {
       use: r.use,
     })),
     stands: airport.stands.map((s) => ({ id: s.id, x: s.x, y: s.y, size: s.size })),
+    helipads: airport.helipads.map((h) => ({ id: h.id, x: h.x, y: h.y })),
     taxiways,
     roads,
     facilities: airport.facilities.map((f) => ({
@@ -154,6 +157,11 @@ export function fromSnapshot(raw: unknown): GameState | null {
     });
   }
 
+  for (const pad of data.helipads ?? []) {
+    if (!inBounds(pad.x, pad.y)) continue;
+    airport.helipads.push({ id: pad.id, x: pad.x, y: pad.y, reservedBy: null });
+  }
+
   for (const index of data.taxiways ?? []) {
     if (Number.isInteger(index) && index >= 0 && index < airport.taxiways.length) {
       airport.taxiways[index] = 1;
@@ -178,7 +186,7 @@ export function fromSnapshot(raw: unknown): GameState | null {
   }
 
   // Ids must never collide with anything already placed, even if the saved counter was wrong.
-  const highest = [...airport.runways, ...airport.stands, ...airport.facilities]
+  const highest = [...airport.runways, ...airport.stands, ...airport.helipads, ...airport.facilities]
     .map((entity) => Number.parseInt(entity.id.replace(/^\D+/, ''), 10))
     .filter((value) => Number.isFinite(value));
   airport.nextEntityId = Math.max(

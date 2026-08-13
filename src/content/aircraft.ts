@@ -14,6 +14,11 @@ import type { AircraftClass, AircraftClassId } from '@/sim/types';
  * The freighter is the deliberate exception — no passengers at all, so it rewards a long
  * runway before a big terminal, and it keeps earning on a day the terminal is swamped.
  *
+ * The two **rotorcraft** are the other exception, and a bigger one: `runwayLength: 0` means
+ * they need no runway at all, only a helipad, which is a runway and a stand in one tile. That
+ * makes the late campaign a placement problem again rather than a longer-runway problem —
+ * their `minSurface`, `use` and `standSize` below are never read by anything.
+ *
  * The three military classes at the bottom need a **military runway**, which no airliner can
  * use and which cannot take one. They carry no passengers at all, so they never touch the
  * terminal: a military strip is a bet on infrastructure that pays in bursts, and the fighter
@@ -344,6 +349,57 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     requiresFuelFarm: true,
     requiresFireStation: true,
   },
+  /*
+   * --- Rotorcraft. No runway, no taxiway, no stand: the pad is all three. ---
+   *
+   * `runwayLength: 0` is the sentinel that says so, and `minSurface`/`use`/`standSize` below
+   * are unread — they exist only because forking `AircraftClass` for two entries would cost
+   * more than four ignored fields.
+   *
+   * Deliberately modest passenger counts. A helicopter is a charter premium, not a hub flow:
+   * the fare is where the money is, so a pad pays back without leaning on the terminal — and
+   * a helipad-only airport can never out-earn a real one.
+   */
+  helicopter: {
+    id: 'helicopter',
+    name: 'Utility helicopter',
+    runwayLength: 0,
+    minSurface: 'grass',
+    use: 'civil',
+    standSize: 'small',
+    silhouette: 'helicopter',
+    endurance: 44,
+    fare: 900,
+    passengers: 6,
+    approachSeconds: 4,
+    landingSeconds: 4,
+    // Unread: a rotorcraft goes landing → parked → departing, with no taxi phase at all.
+    taxiSeconds: 0,
+    turnaroundSeconds: 8,
+    departSeconds: 4,
+    requiresFuelFarm: false,
+    requiresFireStation: false,
+  },
+  'heli-heavy': {
+    id: 'heli-heavy',
+    name: 'Offshore helicopter',
+    runwayLength: 0,
+    minSurface: 'grass',
+    use: 'civil',
+    standSize: 'small',
+    silhouette: 'helicopter',
+    endurance: 40,
+    fare: 2_600,
+    passengers: 19,
+    approachSeconds: 5,
+    landingSeconds: 4,
+    taxiSeconds: 0,
+    turnaroundSeconds: 12,
+    departSeconds: 4,
+    // The gate that makes a second pad a decision rather than a formality.
+    requiresFuelFarm: true,
+    requiresFireStation: false,
+  },
   heavylift: {
     id: 'heavylift',
     name: 'Strategic airlifter',
@@ -367,4 +423,15 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
 
 export function aircraftClass(id: AircraftClassId): AircraftClass {
   return AIRCRAFT_CLASSES[id];
+}
+
+/**
+ * Whether this class lands on a helipad rather than a runway.
+ *
+ * `MIN_RUNWAY_TILES` is 3 and `checkRunway` enforces it, so a zero here can never mean a very
+ * short runway — which is what lets the sentinel stand in for a flag without adding a field
+ * to all nineteen entries.
+ */
+export function isRotorcraft(id: AircraftClassId): boolean {
+  return AIRCRAFT_CLASSES[id].runwayLength === 0;
 }

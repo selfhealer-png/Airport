@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { LEVEL_MEADOW } from '@/content/levels';
-import { addRunway, addStand, addTaxiwayRun, createGame, towerLevelOf } from '@/sim/airport';
+import {
+  addHelipad,
+  addRunway,
+  addStand,
+  addTaxiwayRun,
+  createGame,
+  towerLevelOf,
+} from '@/sim/airport';
 import { occupantAt } from '@/sim/build';
 import { runDay } from '@/sim/step';
 import { fromSnapshot, toSnapshot, SNAPSHOT_VERSION, type Snapshot } from '@/save/snapshot';
@@ -20,6 +27,7 @@ function builtGame(): GameState {
   addRunway(state.airport, 8, 10, 17, 'gravel');
   addTaxiwayRun(state.airport, 9, 14, 11, 14);
   addStand(state.airport, 12, 14, 'medium');
+  addHelipad(state.airport, 15, 20);
   state.airport.facilities.push({ id: 'fac9', type: 'tower', x: 4, y: 4, level: 2 });
   return state;
 }
@@ -84,18 +92,41 @@ describe('save round trip', () => {
     expect(restored.current).toBeNull();
   });
 
+  it('restores helipads', () => {
+    const restored = roundTrip(builtGame())!;
+
+    expect(restored.airport.helipads).toHaveLength(1);
+    expect(restored.airport.helipads[0]).toMatchObject({ x: 15, y: 20, reservedBy: null });
+  });
+
   it('keeps new entity ids clear of restored ones', () => {
     const restored = roundTrip(builtGame())!;
     const existing = new Set(
       [
         ...restored.airport.runways,
         ...restored.airport.stands,
+        // Helipads must be in this scan too. Leaving them out is a bug that surfaces two
+        // sessions later as a pad and a stand sharing an id — the exact failure the
+        // "ids come from `Airport.nextEntityId`" rule exists to prevent.
+        ...restored.airport.helipads,
         ...restored.airport.facilities,
       ].map((e) => e.id),
     );
 
     const fresh = addStand(restored.airport, 2, 2, 'small');
     expect(existing.has(fresh)).toBe(false);
+  });
+
+  it('will not reissue a helipad id after a load, even with a wrong saved counter', () => {
+    // The counter in the save is not trusted: `fromSnapshot` scans what actually came back.
+    // A pad with the highest id is the case that only passes if helipads are in that scan.
+    const state = builtGame();
+    const raw = JSON.parse(JSON.stringify(toSnapshot(state))) as Snapshot;
+    const restored = fromSnapshot({ ...raw, nextEntityId: 1 })!;
+
+    const padIds = new Set(restored.airport.helipads.map((p) => p.id));
+    expect(padIds.has(addStand(restored.airport, 2, 2, 'small'))).toBe(false);
+    expect(padIds.has(addHelipad(restored.airport, 3, 3))).toBe(false);
   });
 });
 

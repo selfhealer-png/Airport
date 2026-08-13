@@ -53,6 +53,23 @@ const TIERS: readonly Tier[] = [
   { classId: 'superheavy', fromDay: 45, weight: 1 },
 
   /*
+   * Rotorcraft. A second progression axis that needs no runway at all — which is the point of
+   * arriving at day 30, where the campaign otherwise becomes "extend the strip again".
+   *
+   * Weighted like the military classes and for the same reason: a pad should be an occasional
+   * well-paid movement, not a traffic type that reshapes the day. Measured, not guessed — at
+   * the first weights tried, rotary traffic was 26% of the late campaign and, with military
+   * already at 19%, nearly half of every day was traffic that never touched the main runways.
+   * At 1.6/0.6 it settles around 15%, which is the band the military classes sit in.
+   *
+   * The same floor arithmetic applies as above, and more sharply: `helicopter` thins to 0.4
+   * by day 45, and a weight of 1.4 would put it at 0.35 — which fails the `>= 0.35` test
+   * anyway, because 1.4/4 is 0.34999999999999997 in binary floating point. Leave the margin.
+   */
+  { classId: 'helicopter', fromDay: 30, weight: 1.6 },
+  { classId: 'heli-heavy', fromDay: 40, weight: 0.6 },
+
+  /*
    * Military work arrives late and stays occasional. It needs a runway no airliner can use,
    * so the weights are deliberately thin — a dedicated strip should feel like a bet on a few
    * very well paid movements, not a second airport running alongside the first.

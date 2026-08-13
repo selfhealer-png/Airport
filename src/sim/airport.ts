@@ -29,6 +29,7 @@ export function createAirport(map: LevelMap): Airport {
     map,
     runways: [],
     stands: [],
+    helipads: [],
     taxiways: new Uint8Array(map.width * map.height),
     roads: new Uint8Array(map.width * map.height),
     facilities: [],
@@ -160,6 +161,12 @@ export function addRunway(
 export function addStand(airport: Airport, x: number, y: number, size: StandSize): string {
   const id = makeId(airport, 'std');
   airport.stands.push({ id, x, y, size, reservedBy: null });
+  return id;
+}
+
+export function addHelipad(airport: Airport, x: number, y: number): string {
+  const id = makeId(airport, 'pad');
+  airport.helipads.push({ id, x, y, reservedBy: null });
   return id;
 }
 

@@ -38,6 +38,13 @@ export const STAND_COST: Readonly<Record<StandSize, number>> = {
   large: 3_400,
 };
 
+/**
+ * A helipad does the job of a runway and a stand in a single tile, so it is priced above the
+ * largest stand and well below any runway. What the player is buying is not tarmac — it is
+ * the right to skip the whole runway ladder for one kind of traffic.
+ */
+export const HELIPAD_COST = 4_200;
+
 /** Facilities without levels. Tower and terminal are priced per level in `buildings.ts`. */
 export const FACILITY_COST: Readonly<Record<'fuel-farm' | 'fire-station' | 'shop', number>> = {
   'fuel-farm': 2_400,

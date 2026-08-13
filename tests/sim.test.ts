@@ -183,11 +183,11 @@ describe('fuel, diversion and crashing', () => {
     day.aircraft.push(
       {
         id: 1, classId: 'light', phase: 'holding', fuel: 100, timer: 0,
-        managed: true, runwayId: null, standId: null, blockedReason: null,
+        managed: true, runwayId: null, standId: null, padId: null, blockedReason: null,
       },
       {
         id: 2, classId: 'commuter', phase: 'holding', fuel: 130, timer: 0,
-        managed: true, runwayId: null, standId: null, blockedReason: null,
+        managed: true, runwayId: null, standId: null, padId: null, blockedReason: null,
       },
     );
 
@@ -204,11 +204,11 @@ describe('fuel, diversion and crashing', () => {
     day.aircraft.push(
       {
         id: 1, classId: 'light', phase: 'holding', fuel: 120, timer: 0,
-        managed: true, runwayId: null, standId: null, blockedReason: null,
+        managed: true, runwayId: null, standId: null, padId: null, blockedReason: null,
       },
       {
         id: 2, classId: 'light', phase: 'holding', fuel: 20, timer: 0,
-        managed: true, runwayId: null, standId: null, blockedReason: null,
+        managed: true, runwayId: null, standId: null, padId: null, blockedReason: null,
       },
     );
 

@@ -1,4 +1,4 @@
-import { aircraftClass } from '@/content/aircraft';
+import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import { terminalLevel, TERMINAL_LEVELS, towerLevel, TOWER_LEVELS } from '@/content/buildings';
 import { LEVEL_MEADOW } from '@/content/levels';
 import { arrivalsForDay, CAMPAIGN_DAYS, generateSchedule } from '@/content/schedule';
@@ -8,6 +8,7 @@ import {
   applyDemolish,
   applyExtendRunway,
   applyFacility,
+  applyHelipad,
   applyResurface,
   applyRoadRun,
   applyRunway,
@@ -17,6 +18,7 @@ import {
   checkDemolish,
   checkExtendRunway,
   checkFacility,
+  checkHelipad,
   checkResurface,
   checkRoadRun,
   checkRunway,
@@ -58,6 +60,11 @@ import { STAND_RANK, SURFACE_RANK, type DayState, type GameState, type StandSize
  *   5  civil runway A        13  civil runway B
  *   6  taxiway to apron      14  road (runway B)
  *   7  taxiway to apron      16  buildings, 17 their road
+ *                            18  helipads
+ *
+ * Helipads go in their own column beside the building road, not on the apron. They need no
+ * taxiway at all — only a road — so putting them where the taxiways are would waste apron
+ * rows on traffic that cannot use them.
  *
  * The shape is load-bearing. Two runways can only both *work* if each has an unbroken
  * taxiway to a stand, so the apron sits in the middle with a runway either side and the road
@@ -85,6 +92,8 @@ const ROAD_B_X = 14;
 
 const BUILDING_X = 16;
 const BUILDING_ROAD_X = 17;
+const HELIPAD_X = 18;
+const HELIPAD_ROWS = [6, 8, 10, 12] as const;
 const STAND_ROWS = [10, 13, 16, 19, 22, 25, 28] as const;
 
 /** Spends only if the check passes and the money is there. Returns whether it built. */
@@ -233,6 +242,30 @@ function ensureMilitary(state: GameState, needs: number): void {
   );
 }
 
+/**
+ * Adds a helipad beside the building road.
+ *
+ * A pad is a runway and a stand in one tile, so this is the whole of it — one `checkHelipad`
+ * against a column that already has a road running down it. That brevity is the point of the
+ * feature: the rotary side of the airport is a placement problem, not a construction project.
+ */
+function addPad(state: GameState): boolean {
+  const row = HELIPAD_ROWS.find(
+    (r) => !state.airport.helipads.some((p) => p.x === HELIPAD_X && p.y === r),
+  );
+  if (row === undefined) return false;
+
+  const built = tryBuild(checkHelipad(state, HELIPAD_X, row), (q) =>
+    applyHelipad(state, q, HELIPAD_X, row),
+  );
+  if (!built) return false;
+
+  tryBuild(checkRoadRun(state, BUILDING_ROAD_X, 0, BUILDING_ROAD_X, row), (q) =>
+    applyRoadRun(state, q, BUILDING_ROAD_X, 0, BUILDING_ROAD_X, row),
+  );
+  return true;
+}
+
 /** Places a facility on the building row, with the road that switches it on. */
 function place(state: GameState, type: 'tower' | 'terminal' | 'fuel-farm' | 'fire-station'): void {
   const row = { tower: 4, terminal: 8, 'fuel-farm': 20, 'fire-station': 24 }[type];
@@ -268,6 +301,13 @@ function plan(state: GameState): void {
   // for something the airport simply does not have.
   for (const entry of tomorrowsTraffic(state).filter((e) => e.problem)) {
     const spec = aircraftClass(entry.classId);
+
+    if (isRotorcraft(entry.classId)) {
+      // The offshore type needs a fuel farm as well as a pad; the light one needs neither.
+      if (spec.requiresFuelFarm && !facilityOf(state.airport, 'fuel-farm')) place(state, 'fuel-farm');
+      addPad(state);
+      continue;
+    }
 
     if (spec.use === 'military') {
       // Military work shares the fuel farm and fire station but nothing else.
@@ -332,6 +372,15 @@ function plan(state: GameState): void {
 
   const wantedStands = Math.min(STAND_ROWS.length * 2, arrivals);
   while (state.airport.stands.length < wantedStands && addApron(state, biggestSize)) {
+    // keep going while there is both a need and the money
+  }
+
+  // Pads scale with rotary traffic the way stands scale with everything else: a pad is held
+  // from approach through the turnaround, so one movement in flight is one pad occupied.
+  const rotaryBooked = generateSchedule(state.day, state.seed).filter((a) =>
+    isRotorcraft(a.classId),
+  ).length;
+  while (state.airport.helipads.length < Math.min(HELIPAD_ROWS.length, rotaryBooked) && addPad(state)) {
     // keep going while there is both a need and the money
   }
 
@@ -434,6 +483,7 @@ for (let day = 1; day <= days; day++) {
   const length = runway ? runway.y1 - runway.y0 + 1 : 0;
   console.log(`Day ${day}  [${state.airport.runways.length}rwy ${length}t ${runway?.surface ?? '-'}, ` +
     `${state.airport.stands.length} stands, ` +
+    `${state.airport.helipads.length} pads, ` +
     `T${facilityOf(state.airport, 'terminal')?.level ?? 0}/` +
     `C${facilityOf(state.airport, 'tower')?.level ?? 0}]`);
   console.log(summarise(result));

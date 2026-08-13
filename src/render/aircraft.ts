@@ -1,8 +1,16 @@
-import { aircraftClass } from '@/content/aircraft';
+import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import { TILE_PX } from '@/sprites/palette';
 import type { PlaneSpriteName } from '@/sprites/data';
-import { runwayById, standById } from '@/sim/connectivity';
-import type { Aircraft, AircraftSilhouette, Airport, DayState, Runway, Stand } from '@/sim/types';
+import { helipadById, runwayById, standById } from '@/sim/connectivity';
+import type {
+  Aircraft,
+  AircraftSilhouette,
+  Airport,
+  DayState,
+  Helipad,
+  Runway,
+  Stand,
+} from '@/sim/types';
 
 /**
  * Where to draw each aeroplane, and which way round.
@@ -47,6 +55,7 @@ const SPRITE_OF: Readonly<Record<AircraftSilhouette, PlaneSpriteName>> = {
   widebody: 'plane.widebody',
   fighter: 'plane.fighter',
   transport: 'plane.transport',
+  helicopter: 'plane.helicopter',
 };
 
 /** How long each silhouette is, in tiles. Must match the authored sprite heights. */
@@ -59,6 +68,7 @@ const LENGTH_OF: Readonly<Record<AircraftSilhouette, number>> = {
   widebody: 2,
   fighter: 1,
   transport: 2,
+  helicopter: 1,
 };
 
 const centre = (tile: number): number => tile * TILE_PX + TILE_PX / 2;
@@ -153,6 +163,11 @@ const standAt = (stand: Stand): { x: number; y: number } => ({
   y: centre(stand.y),
 });
 
+const padAt = (pad: Helipad): { x: number; y: number } => ({
+  x: centre(pad.x),
+  y: centre(pad.y),
+});
+
 /** Builds a drawable view for every aircraft that is currently somewhere on the airfield. */
 export function aircraftViews(airport: Airport, day: DayState): AircraftView[] {
   const views: AircraftView[] = [];
@@ -164,6 +179,8 @@ export function aircraftViews(airport: Airport, day: DayState): AircraftView[] {
     const lengthTiles = LENGTH_OF[spec.silhouette];
     const runway = aircraft.runwayId ? runwayById(airport, aircraft.runwayId) : undefined;
     const stand = aircraft.standId ? standById(airport, aircraft.standId) : undefined;
+    const pad = aircraft.padId ? helipadById(airport, aircraft.padId) : undefined;
+    const rotor = isRotorcraft(aircraft.classId);
 
     const push = (placed: Placed, altitude: number, extra?: Partial<AircraftView>): void => {
       views.push({
@@ -189,6 +206,15 @@ export function aircraftViews(airport: Airport, day: DayState): AircraftView[] {
       }
 
       case 'approach': {
+        // A rotorcraft has no threshold to line up on: it comes in over the pad and stops
+        // above it. Nose stays up throughout — it is not flying a runway heading.
+        if (rotor) {
+          if (!pad) break;
+          const t = progress(aircraft, spec.approachSeconds);
+          const here = padAt(pad);
+          push({ x: here.x, y: lerp(centre(pad.y - 7), here.y, t), rotation: 0 }, lerp(1, 0.55, t));
+          break;
+        }
         if (!runway) break;
         // Descends from off the top of the field onto the threshold, shadow closing in.
         const t = progress(aircraft, spec.approachSeconds);
@@ -204,6 +230,17 @@ export function aircraftViews(airport: Airport, day: DayState): AircraftView[] {
       }
 
       case 'landing': {
+        /*
+         * Straight down onto the pad. The `easeOut` roll below is a landing *roll* — it
+         * assumes a runway to bleed speed along, and a helicopter has none. Descending
+         * vertically is the whole visual point of a helipad.
+         */
+        if (rotor) {
+          if (!pad) break;
+          const t = progress(aircraft, spec.landingSeconds);
+          push({ ...padAt(pad), rotation: 0 }, lerp(0.55, 0, easeOut(t)));
+          break;
+        }
         if (!runway) break;
         const t = progress(aircraft, spec.landingSeconds);
         push(
@@ -228,6 +265,11 @@ export function aircraftViews(airport: Airport, day: DayState): AircraftView[] {
       }
 
       case 'parked': {
+        if (rotor) {
+          if (!pad) break;
+          push({ ...padAt(pad), rotation: 0 }, 0);
+          break;
+        }
         if (!stand) break;
         push({ ...standAt(stand), rotation: 0 }, 0);
         break;
@@ -243,6 +285,14 @@ export function aircraftViews(airport: Airport, day: DayState): AircraftView[] {
       }
 
       case 'departing': {
+        // Straight up off the pad, mirroring the arrival. No take-off roll to ease into.
+        if (rotor) {
+          if (!pad) break;
+          const t = progress(aircraft, spec.departSeconds);
+          const here = padAt(pad);
+          push({ x: here.x, y: lerp(here.y, centre(pad.y - 7), easeIn(t)), rotation: 0 }, t);
+          break;
+        }
         if (!runway) break;
         const t = progress(aircraft, spec.departSeconds);
         push(

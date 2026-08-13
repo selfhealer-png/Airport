@@ -2,6 +2,7 @@ import { terminalLevel, TERMINAL_LEVELS, TOWER_LEVELS } from '@/content/building
 import {
   DEMOLITION_REFUND,
   FACILITY_COST,
+  HELIPAD_COST,
   LEVELLED_FACILITIES,
   MILITARY_RUNWAY_PREMIUM,
   MIN_RUNWAY_TILES,
@@ -60,7 +61,7 @@ export function isAffordableQuote(result: BuildCheck): result is BuildQuote {
   return typeof result !== 'string';
 }
 
-export type Occupant = 'runway' | 'stand' | 'taxiway' | 'road' | 'facility' | null;
+export type Occupant = 'runway' | 'stand' | 'helipad' | 'taxiway' | 'road' | 'facility' | null;
 
 /** What is on a tile, if anything. One tile holds at most one thing. */
 export function occupantAt(airport: Airport, x: number, y: number): Occupant {
@@ -68,6 +69,7 @@ export function occupantAt(airport: Airport, x: number, y: number): Occupant {
     if (runway.x === x && y >= runway.y0 && y <= runway.y1) return 'runway';
   }
   if (airport.stands.some((stand) => stand.x === x && stand.y === y)) return 'stand';
+  if (airport.helipads.some((pad) => pad.x === x && pad.y === y)) return 'helipad';
   if (airport.facilities.some((facility) => facility.x === x && facility.y === y)) {
     return 'facility';
   }
@@ -301,6 +303,19 @@ export function checkStand(state: GameState, x: number, y: number, size: StandSi
   return afford(state, STAND_COST[size]);
 }
 
+/**
+ * A helipad. One tile, no drag, no size — it is a runway and a stand at once.
+ *
+ * Given its own check/apply pair rather than folded into `checkFacility` because it is not a
+ * `Facility`: it carries no level, and it needs the per-day reservation state a runway and a
+ * stand have. What it shares with facilities is only that it occupies a tile.
+ */
+export function checkHelipad(state: GameState, x: number, y: number): BuildCheck {
+  const problem = tileIsFree(state.airport, x, y);
+  if (problem) return problem;
+  return afford(state, HELIPAD_COST);
+}
+
 // --- Facilities ------------------------------------------------------------------------
 
 export function facilityCost(type: FacilityType, level: number): number {
@@ -487,6 +502,13 @@ export function applyStand(
   return id;
 }
 
+export function applyHelipad(state: GameState, quote: BuildQuote, x: number, y: number): string {
+  spend(state, quote);
+  const id = nextId(state.airport, 'pad');
+  state.airport.helipads.push({ id, x, y, reservedBy: null });
+  return id;
+}
+
 export function applyFacility(
   state: GameState,
   quote: BuildQuote,
@@ -535,6 +557,10 @@ export function checkDemolish(state: GameState, x: number, y: number): BuildChec
   const stand = airport.stands.find((s) => s.x === x && s.y === y);
   if (stand) return { cost: -Math.round(STAND_COST[stand.size] * DEMOLITION_REFUND) };
 
+  if (airport.helipads.some((p) => p.x === x && p.y === y)) {
+    return { cost: -Math.round(HELIPAD_COST * DEMOLITION_REFUND) };
+  }
+
   const facility = airport.facilities.find((f) => f.x === x && f.y === y);
   if (facility) {
     const paid = LEVELLED_FACILITIES.has(facility.type)
@@ -575,6 +601,12 @@ export function applyDemolish(state: GameState, quote: BuildQuote, x: number, y:
   const standIndex = airport.stands.findIndex((s) => s.x === x && s.y === y);
   if (standIndex >= 0) {
     airport.stands.splice(standIndex, 1);
+    return;
+  }
+
+  const padIndex = airport.helipads.findIndex((p) => p.x === x && p.y === y);
+  if (padIndex >= 0) {
+    airport.helipads.splice(padIndex, 1);
     return;
   }
 

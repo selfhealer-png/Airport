@@ -63,6 +63,8 @@ function isDrivableAt(airport: Airport, x: number, y: number): boolean {
   if (airport.roads[y * map.width + x] === 1) return true;
   if (airport.facilities.some((f) => f.x === x && f.y === y)) return true;
   if (airport.stands.some((s) => s.x === x && s.y === y)) return true;
+  // A pad is landside as well as airside: the passengers and the fire cover arrive by road.
+  if (airport.helipads.some((p) => p.x === x && p.y === y)) return true;
   return false;
 }
 
@@ -216,10 +218,14 @@ export class Renderer {
       if (runway.closed) this.tint(runway, screenX, screenY);
     }
 
-    // 4. Stands, then facilities on top.
+    // 4. Stands and helipads, then facilities on top.
     for (const stand of airport.stands) {
       if (!onScreen(stand.x, stand.y)) continue;
       put(`stand.${stand.size}`, stand.x, stand.y);
+    }
+    for (const pad of airport.helipads) {
+      if (!onScreen(pad.x, pad.y)) continue;
+      put('helipad', pad.x, pad.y);
     }
     for (const facility of airport.facilities) {
       if (!onScreen(facility.x, facility.y)) continue;

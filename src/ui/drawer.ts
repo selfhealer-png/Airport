@@ -1,6 +1,7 @@
 import { TERMINAL_LEVELS, TOWER_LEVELS } from '@/content/buildings';
 import {
   FACILITY_COST,
+  HELIPAD_COST,
   MILITARY_RUNWAY_PREMIUM,
   LEVELLED_FACILITIES,
   MIN_RUNWAY_TILES,
@@ -85,6 +86,12 @@ function chips(): ToolChip[] {
       label: 'Large stand',
       hint: `£${STAND_COST.large.toLocaleString()}`,
       tool: { kind: 'stand', size: 'large' },
+    },
+    {
+      id: 'helipad',
+      label: 'Helipad',
+      hint: `£${HELIPAD_COST.toLocaleString()}`,
+      tool: { kind: 'helipad' },
     },
     {
       id: 'tower',
@@ -340,6 +347,8 @@ function minimumCost(chip: ToolChip): number {
       return ROAD_COST_PER_TILE;
     case 'stand':
       return STAND_COST[chip.tool.size];
+    case 'helipad':
+      return HELIPAD_COST;
     case 'facility':
       return facilityCost(chip.tool.type, LEVELLED_FACILITIES.has(chip.tool.type) ? 1 : 0);
     case 'demolish':

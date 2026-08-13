@@ -1,7 +1,7 @@
-import { aircraftClass } from '@/content/aircraft';
+import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import { towerLevel } from '@/content/buildings';
 import { hasWorkingFireStation, hasWorkingFuelFarm, workingTowerLevel } from './airport';
-import { standById, type Services } from './connectivity';
+import { helipadById, standById, type Services } from './connectivity';
 import {
   runwayLength,
   STAND_RANK,
@@ -30,9 +30,24 @@ export function countMovements(day: DayState): number {
   return day.aircraft.filter((a) => MOVEMENT_PHASES.has(a.phase)).length;
 }
 
+/** Where a fixed-wing aircraft is going: a runway to land on and a stand to park on. */
 interface Candidate {
   runway: Runway;
   standId: string;
+}
+
+/**
+ * Where a rotorcraft is going. A pad is both, which is why this shares no fields with
+ * `Candidate` and is a separate shape rather than a widened one.
+ */
+interface PadCandidate {
+  padId: string;
+}
+
+export type Assignment = Candidate | PadCandidate;
+
+export function isPadCandidate(result: Assignment): result is PadCandidate {
+  return 'padId' in result;
 }
 
 /**
@@ -52,6 +67,15 @@ export function structuralBlock(
   if (spec.requiresFuelFarm && !hasWorkingFuelFarm(airport, services)) return 'no-fuel-farm';
   if (spec.requiresFireStation && !hasWorkingFireStation(airport, services)) {
     return 'no-fire-station';
+  }
+
+  // A rotorcraft skips the entire runway/taxi-link/stand chain: none of it describes anything
+  // it uses. Ordered most fundamental first like the rest of this function — no pad at all
+  // before a pad nothing can drive to.
+  if (isRotorcraft(classId)) {
+    if (airport.helipads.length === 0) return 'no-helipad';
+    if (!airport.helipads.some((pad) => services.roadServed.has(pad.id))) return 'no-road-helipad';
+    return null;
   }
 
   // Use comes first: a strip cleared for the wrong thing is not a short runway, it is the
@@ -108,11 +132,13 @@ export function findAssignment(
   airport: Airport,
   day: DayState,
   aircraft: Aircraft,
-): Candidate | BlockReason {
+): Assignment | BlockReason {
   const spec = aircraftClass(aircraft.classId);
 
   const structural = structuralBlock(airport, day.services, aircraft.classId);
   if (structural) return structural;
+
+  if (isRotorcraft(aircraft.classId)) return findHelipadAssignment(airport, day);
 
   const usable = airport.runways.filter(
     (r) =>
@@ -150,7 +176,21 @@ export function findAssignment(
   return options[0]!;
 }
 
-function isCandidate(result: Candidate | BlockReason): result is Candidate {
+/**
+ * A free, road-served pad, or the reason there is none right now.
+ *
+ * Much shorter than the fixed-wing path because a pad is a runway and a stand at once: there
+ * is no length, no surface, no taxi link and no stand size to satisfy. Everything structural
+ * has already been ruled out by `structuralBlock`, so the only thing left to be is busy.
+ */
+function findHelipadAssignment(airport: Airport, day: DayState): PadCandidate | BlockReason {
+  const pad = airport.helipads.find(
+    (p) => p.reservedBy === null && day.services.roadServed.has(p.id),
+  );
+  return pad ? { padId: pad.id } : 'helipad-busy';
+}
+
+function isCandidate(result: Assignment | BlockReason): result is Assignment {
   return typeof result !== 'string';
 }
 
@@ -182,13 +222,23 @@ export function assignHoldingAircraft(airport: Airport, day: DayState): void {
       continue;
     }
 
-    const stand = standById(airport, result.standId);
-    if (!stand) continue;
+    // A rotorcraft reserves one pad instead of a runway and a stand. It still costs the tower
+    // a movement: a helicopter landing is something the tower has to sequence, and exempting
+    // it would let a helipad-only airport bypass the tower entirely.
+    if (isPadCandidate(result)) {
+      const pad = helipadById(airport, result.padId);
+      if (!pad) continue;
+      pad.reservedBy = aircraft.id;
+      aircraft.padId = pad.id;
+    } else {
+      const stand = standById(airport, result.standId);
+      if (!stand) continue;
+      result.runway.reservedBy = aircraft.id;
+      stand.reservedBy = aircraft.id;
+      aircraft.runwayId = result.runway.id;
+      aircraft.standId = stand.id;
+    }
 
-    result.runway.reservedBy = aircraft.id;
-    stand.reservedBy = aircraft.id;
-    aircraft.runwayId = result.runway.id;
-    aircraft.standId = stand.id;
     aircraft.blockedReason = null;
     aircraft.phase = 'approach';
     aircraft.timer = aircraftClass(aircraft.classId).approachSeconds;

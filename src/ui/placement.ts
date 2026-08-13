@@ -2,6 +2,7 @@ import {
   applyDemolish,
   applyFacility,
   applyGrowRunway,
+  applyHelipad,
   applyRoadRun,
   applyRunway,
   applyStand,
@@ -9,6 +10,7 @@ import {
   checkDemolish,
   checkFacility,
   checkGrowRunway,
+  checkHelipad,
   checkRoadRun,
   checkRunway,
   checkStand,
@@ -39,6 +41,8 @@ export type Tool =
   | { readonly kind: 'taxiway' }
   | { readonly kind: 'road' }
   | { readonly kind: 'stand'; readonly size: StandSize }
+  /** One tile, no size: a pad is a runway and a stand at once. */
+  | { readonly kind: 'helipad' }
   | { readonly kind: 'facility'; readonly type: FacilityType }
   | { readonly kind: 'demolish' };
 
@@ -127,6 +131,9 @@ export function resolvePlacement(
     case 'stand':
       return { tiles: [to], check: checkStand(state, to.x, to.y, tool.size) };
 
+    case 'helipad':
+      return { tiles: [to], check: checkHelipad(state, to.x, to.y) };
+
     case 'facility':
       return { tiles: [to], check: checkFacility(state, tool.type, to.x, to.y) };
 
@@ -163,6 +170,9 @@ export function commitPlacement(state: GameState, tool: Tool, placement: Placeme
       return true;
     case 'stand':
       applyStand(state, check, last.x, last.y, tool.size);
+      return true;
+    case 'helipad':
+      applyHelipad(state, check, last.x, last.y);
       return true;
     case 'facility':
       applyFacility(state, check, tool.type, last.x, last.y);

@@ -94,10 +94,25 @@ export interface Stand {
   reservedBy: number | null;
 }
 
+/**
+ * A helipad: a runway and a stand in one tile.
+ *
+ * A rotorcraft lands on it and parks on it — there is nothing to taxi between — which is what
+ * makes helipads a genuinely different placement problem from runways. What they cost is a
+ * road and a tile, not a column of tarmac.
+ */
+export interface Helipad {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  reservedBy: number | null;
+}
+
 export interface Airport {
   readonly map: LevelMap;
   runways: Runway[];
   stands: Stand[];
+  helipads: Helipad[];
   /** Row-major mask, 1 where a taxiway tile has been laid. */
   taxiways: Uint8Array;
   /**
@@ -144,6 +159,9 @@ export type BlockReason =
   | 'no-stand'
   | 'no-stand-size'
   | 'no-road-stand'
+  | 'no-helipad'
+  | 'no-road-helipad'
+  | 'helipad-busy'
   | 'runway-busy'
   | 'tower-capacity'
   | 'stack-overflow'
@@ -177,6 +195,8 @@ export interface Aircraft {
   managed: boolean;
   runwayId: string | null;
   standId: string | null;
+  /** Rotorcraft only. Set instead of `runwayId`/`standId`, never alongside them. */
+  padId: string | null;
   blockedReason: BlockReason | null;
 }
 
@@ -197,7 +217,9 @@ export type AircraftClassId =
   | 'superheavy'
   | 'fighter'
   | 'transport'
-  | 'heavylift';
+  | 'heavylift'
+  | 'helicopter'
+  | 'heli-heavy';
 
 /**
  * Which aeroplane shape is drawn for a class.
@@ -215,16 +237,26 @@ export type AircraftSilhouette =
   | 'narrowbody'
   | 'widebody'
   | 'fighter'
-  | 'transport';
+  | 'transport'
+  | 'helicopter';
 
 export interface AircraftClass {
   readonly id: AircraftClassId;
   readonly name: string;
-  /** Tiles of runway required to land. */
+  /**
+   * Tiles of runway required to land, or **zero for a rotorcraft**, which needs a helipad
+   * instead and never touches a runway at all.
+   *
+   * Zero is a sentinel rather than a flag because `MIN_RUNWAY_TILES` is 3 and `checkRunway`
+   * enforces it, so no fixed-wing class can ever have a zero here. A boolean would have meant
+   * editing all seventeen existing entries to say "no" — see `isRotorcraft()`.
+   */
   readonly runwayLength: number;
+  /** Unread for a rotorcraft: a helipad has no surface, no use and no linked stand. */
   readonly minSurface: RunwaySurface;
-  /** Which kind of runway this class will operate from. */
+  /** Which kind of runway this class will operate from. Unread for a rotorcraft. */
   readonly use: RunwayUse;
+  /** Unread for a rotorcraft, which parks on the pad it landed on. */
   readonly standSize: StandSize;
   readonly silhouette: AircraftSilhouette;
   /** Seconds of fuel available while holding. */

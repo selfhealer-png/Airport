@@ -1,4 +1,4 @@
-import { aircraftClass } from '@/content/aircraft';
+import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import {
   CRASH_COST,
   FUEL_FARM_TURNAROUND_FACTOR,
@@ -13,7 +13,7 @@ import {
   workingTowerLevel,
 } from './airport';
 import { assignHoldingAircraft } from './assignment';
-import { buildServices, runwayById, standById } from './connectivity';
+import { buildServices, helipadById, runwayById, standById } from './connectivity';
 import {
   runwayLength,
   SURFACE_RANK,
@@ -61,6 +61,8 @@ const STRUCTURAL_REASONS: ReadonlySet<string> = new Set([
   'no-taxi-link',
   'no-stand-size',
   'no-road-stand',
+  'no-helipad',
+  'no-road-helipad',
   'no-fuel-farm',
   'no-fire-station',
 ]);
@@ -106,6 +108,9 @@ export function startDay(state: GameState, schedule: readonly ScheduledArrival[]
   for (const stand of state.airport.stands) {
     stand.reservedBy = null;
   }
+  for (const pad of state.airport.helipads) {
+    pad.reservedBy = null;
+  }
 
   const day: DayState = {
     day: state.day,
@@ -141,6 +146,7 @@ function spawnArrivals(day: DayState): void {
       managed: false,
       runwayId: null,
       standId: null,
+      padId: null,
       blockedReason: null,
     });
     day.nextArrival++;
@@ -172,6 +178,18 @@ function releaseStand(airport: Airport, aircraft: Aircraft): void {
   const stand = standById(airport, aircraft.standId);
   if (stand?.reservedBy === aircraft.id) stand.reservedBy = null;
   aircraft.standId = null;
+}
+
+/**
+ * A pad is the rotorcraft's runway and its stand at once, so it is held from approach right
+ * through the turnaround and released in one go — there is no pushback that frees a gate
+ * early, which is exactly what makes a second pad worth buying.
+ */
+function releasePad(airport: Airport, aircraft: Aircraft): void {
+  if (!aircraft.padId) return;
+  const pad = helipadById(airport, aircraft.padId);
+  if (pad?.reservedBy === aircraft.id) pad.reservedBy = null;
+  aircraft.padId = null;
 }
 
 function record(state: GameState, day: DayState, event: DayEvent): void {
@@ -218,6 +236,7 @@ function divert(state: GameState, day: DayState, aircraft: Aircraft): void {
   aircraft.phase = 'diverted';
   releaseRunway(state.airport, aircraft);
   releaseStand(state.airport, aircraft);
+  releasePad(state.airport, aircraft);
   record(state, day, {
     aircraftId: aircraft.id,
     classId: aircraft.classId,
@@ -231,17 +250,36 @@ function divert(state: GameState, day: DayState, aircraft: Aircraft): void {
 }
 
 /**
+ * A pad holding wreckage rather than an aeroplane.
+ *
+ * `Runway` has a `closed` flag for this; a helipad does not need one, because its whole
+ * occupancy model is a single reservation. Reserving it to an id no aircraft can have keeps
+ * it out of the assignment pass for the rest of the day and is released by `startDay` with
+ * every other reservation.
+ */
+const CLOSED_BY_WRECKAGE = -1;
+
+/**
  * An aircraft the tower never had control of comes down on the airfield. The wreckage closes
  * the longest runway for the rest of the day — losing exactly the strip the biggest earners
  * needed.
  */
 function crash(state: GameState, day: DayState, aircraft: Aircraft): void {
   aircraft.phase = 'crashed';
-  releaseRunway(state.airport, aircraft);
-  releaseStand(state.airport, aircraft);
 
-  const longest = [...state.airport.runways].sort((a, b) => runwayLength(b) - runwayLength(a))[0];
-  if (longest) longest.closed = true;
+  // A rotorcraft comes down on its pad, and a pad has no "longest" to sort by — there is only
+  // the one it was using. Closing a runway instead would take the strip the airliners needed
+  // for something that never touched it.
+  if (isRotorcraft(aircraft.classId)) {
+    const pad = aircraft.padId ? helipadById(state.airport, aircraft.padId) : undefined;
+    releasePad(state.airport, aircraft);
+    if (pad) pad.reservedBy = CLOSED_BY_WRECKAGE;
+  } else {
+    releaseRunway(state.airport, aircraft);
+    releaseStand(state.airport, aircraft);
+    const longest = [...state.airport.runways].sort((a, b) => runwayLength(b) - runwayLength(a))[0];
+    if (longest) longest.closed = true;
+  }
 
   record(state, day, {
     aircraftId: aircraft.id,
@@ -281,13 +319,27 @@ function advanceTimed(state: GameState, day: DayState, aircraft: Aircraft, dt: n
       aircraft.timer = spec.landingSeconds;
       break;
 
-    case 'landing':
+    case 'landing': {
       // Touchdown complete: the runway is free again and the fare is banked.
       releaseRunway(state.airport, aircraft);
       land(state, day, aircraft);
-      aircraft.phase = 'taxi-in';
-      aircraft.timer = spec.taxiSeconds;
+
+      // A rotorcraft has nothing to taxi between — it is already on the pad it will park on,
+      // so it goes straight to `parked`. Branching here rather than giving the two classes a
+      // zero taxi time: that would technically work and would leave a phase every other piece
+      // of code touching `AircraftPhase` has to know is a one-tick no-op for two classes.
+      const factor = hasWorkingFuelFarm(state.airport, day.services)
+        ? FUEL_FARM_TURNAROUND_FACTOR
+        : 1;
+      if (isRotorcraft(aircraft.classId)) {
+        aircraft.phase = 'parked';
+        aircraft.timer = spec.turnaroundSeconds * factor;
+      } else {
+        aircraft.phase = 'taxi-in';
+        aircraft.timer = spec.taxiSeconds;
+      }
       break;
+    }
 
     case 'taxi-in': {
       aircraft.phase = 'parked';
@@ -300,7 +352,13 @@ function advanceTimed(state: GameState, day: DayState, aircraft: Aircraft, dt: n
 
     case 'parked':
       // Pushback: the gate is free from here, which is both realistic and a meaningful
-      // chunk of apron throughput.
+      // chunk of apron throughput. A rotorcraft has no pushback and no runway to queue for —
+      // it lifts off the pad it is standing on, and only then is the pad free.
+      if (isRotorcraft(aircraft.classId)) {
+        aircraft.phase = 'departing';
+        aircraft.timer = spec.departSeconds;
+        break;
+      }
       releaseStand(state.airport, aircraft);
       aircraft.phase = 'taxi-out';
       aircraft.timer = spec.taxiSeconds;
@@ -324,6 +382,7 @@ function advanceTimed(state: GameState, day: DayState, aircraft: Aircraft, dt: n
 
     case 'departing':
       releaseRunway(state.airport, aircraft);
+      releasePad(state.airport, aircraft);
       aircraft.phase = 'done';
       break;
 
@@ -410,6 +469,12 @@ export function explainReason(reason: string | null): string {
       return 'no stand big enough for it';
     case 'no-road-stand':
       return 'no road reaching a stand of the right size';
+    case 'no-helipad':
+      return 'no helipad — it does not use a runway';
+    case 'no-road-helipad':
+      return 'no road reaching a helipad';
+    case 'helipad-busy':
+      return 'every helipad was occupied';
     case 'runway-busy':
       return 'every suitable runway was occupied';
     case 'tower-capacity':

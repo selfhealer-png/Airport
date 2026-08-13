@@ -1,4 +1,4 @@
-import { aircraftClass } from '@/content/aircraft';
+import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import { terminalLevel, towerLevel } from '@/content/buildings';
 import { arrivalsForDay, generateSchedule } from '@/content/schedule';
 import { workingTerminalLevel, workingTowerLevel } from './airport';
@@ -125,6 +125,41 @@ function militaryAdvice(state: GameState): Advice[] {
   return advice;
 }
 
+/**
+ * Rotorcraft, which are the other traffic that shares nothing with the runways.
+ *
+ * The same two failures as the military strip, and the first one is the reason this exists:
+ * the debrief only explains aeroplanes that were *lost*, and "no helipad" on a field covered
+ * in perfectly good runways is the kind of thing a player reads as a bug rather than a
+ * missing building.
+ */
+function rotorAdvice(state: GameState): Advice[] {
+  const advice: Advice[] = [];
+  const booked = generateSchedule(state.day, state.seed).filter((a) =>
+    isRotorcraft(a.classId),
+  ).length;
+  const pads = state.airport.helipads.length;
+
+  if (booked > 0 && pads === 0) {
+    advice.push({
+      tone: 'warn',
+      text:
+        `${booked} helicopter movement${booked === 1 ? ' is' : 's are'} booked in and you have ` +
+        'no helipad. They do not use a runway at all — a pad is a runway and a stand in one ' +
+        'tile, and it needs a road like everything else.',
+    });
+  }
+
+  if (booked === 0 && pads > 0) {
+    advice.push({
+      tone: 'info',
+      text: 'Nothing rotary is booked today, so your helipads will sit idle.',
+    });
+  }
+
+  return advice;
+}
+
 /** Whether the terminal can cope with what is booked in, and whether retail is paying. */
 function terminalAdvice(state: GameState, services: Services): Advice[] {
   const advice: Advice[] = [];
@@ -235,6 +270,7 @@ export function airportAdvice(state: GameState): Advice[] {
   }
 
   advice.push(...militaryAdvice(state));
+  advice.push(...rotorAdvice(state));
   advice.push(...terminalAdvice(state, services));
 
   // Largest stand caps the biggest aircraft the airport can accept at all.

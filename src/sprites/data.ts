@@ -668,6 +668,56 @@ const PLANE_TRANSPORT: SpriteSource = [
   '................',
 ];
 
+/**
+ * A helipad: concrete, a marked circle and an H.
+ *
+ * Authored rather than drawn procedurally, unlike the taxiway guide lines, because a pad
+ * never joins tile-to-tile — it is always exactly one tile and always looks the same, so
+ * there are no combinations to keep in step.
+ */
+const HELIPAD: SpriteSource = [
+  'CCCCCCCCCCCCCCCC',
+  'CccccccccccccccC',
+  'CccccmmmmmmccccC',
+  'CcccmmccccmmcccC',
+  'CccmmccccccmmccC',
+  'CccmccmccmccmccC',
+  'CcmmccmccmccmmcC',
+  'CcmcccmmmmcccmcC',
+  'CcmcccmmmmcccmcC',
+  'CcmmccmccmccmmcC',
+  'CccmccmccmccmccC',
+  'CccmmccccccmmccC',
+  'CcccmmccccmmcccC',
+  'CccccmmmmmmccccC',
+  'CccccccccccccccC',
+  'CCCCCCCCCCCCCCCC',
+];
+
+/**
+ * Utility helicopter, nose up. One tile: it is the smallest thing that flies here, and the
+ * silhouette has to read as "not an aeroplane" at a glance — main rotor across the whole
+ * tile, stubby body, tail boom.
+ */
+const PLANE_HELICOPTER: SpriteSource = [
+  '................',
+  '.kkkkkkkkkkkkkk.',
+  '..iiiiiiiiiiii..',
+  '.......kk.......',
+  '......kbbk......',
+  '.....kbQQbk.....',
+  '....kbQQQQbk....',
+  '....kbbbbbbk....',
+  '....kbbbbbbk....',
+  '.....kbbbbk.....',
+  '......kbbk......',
+  '......kbbk......',
+  '.....kkbbkk.....',
+  '....kiikkiik....',
+  '......kkkk......',
+  '................',
+];
+
 export const SPRITES = {
   'terrain.grass.a': GRASS_A,
   'terrain.grass.b': GRASS_B,
@@ -694,6 +744,7 @@ export const SPRITES = {
   'facility.fuel-farm': FUEL_FARM,
   'facility.fire-station': FIRE_STATION,
   'facility.shop': SHOP,
+  'helipad': HELIPAD,
   'plane.single': PLANE_SINGLE,
   'plane.twin': PLANE_TWIN,
   'plane.turboprop': PLANE_TURBOPROP,
@@ -702,6 +753,7 @@ export const SPRITES = {
   'plane.widebody': PLANE_WIDEBODY,
   'plane.fighter': PLANE_FIGHTER,
   'plane.transport': PLANE_TRANSPORT,
+  'plane.helicopter': PLANE_HELICOPTER,
 } as const satisfies Record<string, SpriteSource>;
 
 export type SpriteName = keyof typeof SPRITES;

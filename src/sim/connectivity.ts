@@ -1,4 +1,4 @@
-import type { Airport, Facility, Runway, Stand } from './types';
+import type { Airport, Facility, Helipad, Runway, Stand } from './types';
 
 /**
  * Works out which stands each runway can taxi to.
@@ -108,6 +108,10 @@ export function runwayById(airport: Airport, id: string): Runway | undefined {
   return airport.runways.find((runway) => runway.id === id);
 }
 
+export function helipadById(airport: Airport, id: string): Helipad | undefined {
+  return airport.helipads.find((pad) => pad.id === id);
+}
+
 /**
  * The landside road network.
  *
@@ -171,6 +175,7 @@ function servedThings(airport: Airport): Array<{ id: string; tiles: Array<[numbe
     things.push({ id: runway.id, tiles });
   }
   for (const stand of airport.stands) things.push({ id: stand.id, tiles: [[stand.x, stand.y]] });
+  for (const pad of airport.helipads) things.push({ id: pad.id, tiles: [[pad.x, pad.y]] });
   for (const facility of airport.facilities) {
     things.push({ id: facility.id, tiles: [[facility.x, facility.y]] });
   }
@@ -238,6 +243,19 @@ export function standHasRoad(
   return touches(airport, network, [[stand.x, stand.y]]);
 }
 
+/**
+ * A helipad needs road access for exactly the reasons a stand does — the passengers have to
+ * leave and the fire cover has to arrive. Helipads are never taxiway-linked: there is nothing
+ * to taxi to, so they touch `roadServed` and never `links`.
+ */
+export function helipadHasRoad(
+  airport: Airport,
+  network: ReadonlySet<number>,
+  pad: Helipad,
+): boolean {
+  return touches(airport, network, [[pad.x, pad.y]]);
+}
+
 /** A building with no road to it is staffed by nobody and does nothing at all. */
 export function facilityHasRoad(
   airport: Airport,
@@ -276,6 +294,9 @@ export function buildServices(airport: Airport): Services {
   }
   for (const stand of airport.stands) {
     if (standHasRoad(airport, network, stand)) roadServed.add(stand.id);
+  }
+  for (const pad of airport.helipads) {
+    if (helipadHasRoad(airport, network, pad)) roadServed.add(pad.id);
   }
   for (const facility of airport.facilities) {
     if (facilityHasRoad(airport, network, facility)) roadServed.add(facility.id);
