@@ -24,6 +24,13 @@ export interface PointerHandlers {
   onBuildEnd?(): void;
   /** A press that did not turn into a drag or a pinch. */
   onTap?(tile: TileIndex): void;
+  /**
+   * The player has panned or zoomed, and the view is now theirs.
+   *
+   * Until this fires the app keeps re-framing the map to fit; afterwards it must never move
+   * the camera again on its own.
+   */
+  onCameraMoved?(): void;
 }
 
 /**
@@ -105,6 +112,7 @@ export function attachPointerControls(
       } else {
         camera.x -= dx / camera.scale;
         camera.y -= dy / camera.scale;
+        handlers.onCameraMoved?.();
       }
       return;
     }
@@ -113,6 +121,7 @@ export function attachPointerControls(
       const [a, b] = [...pointers.values()] as [ActivePointer, ActivePointer];
       const ratio = distance(a, b) / pinchStartDistance;
       zoomAt(camera, (a.x + b.x) / 2, (a.y + b.y) / 2, pinchStartScale * ratio, deviceRatio());
+      handlers.onCameraMoved?.();
     }
   };
 
@@ -146,6 +155,7 @@ export function attachPointerControls(
     const dpr = deviceRatio();
     const step = (event.deltaY < 0 ? 1 : -1) / dpr;
     zoomAt(camera, event.clientX - rect.left, event.clientY - rect.top, camera.scale + step, dpr);
+    handlers.onCameraMoved?.();
   };
 
   element.addEventListener('pointerdown', onPointerDown);

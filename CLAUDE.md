@@ -381,15 +381,26 @@ currently the only thing that needs it.
   will run the game on a phone but will not register the service worker or offer to install.
   Full PWA testing needs `localhost`, HTTPS, or a tunnel.
 - The map is portrait-only by design. Landscape is not handled and is not meant to be.
+- **The field's height is set by the phone, not by the campaign.** Zoom steps in whole device
+  pixels, so on a 3x screen the levels either side of 1 are 2/3 and 4/3 — nothing between. At
+  42 rows the field was a hair too tall to fit at 1 and dropped to 2/3, drawing the whole
+  airport a third smaller than it needed to be. Check `fitScale` against a real phone viewport
+  before growing `FIELD_HEIGHT`; the cost is invisible on a desktop window.
 - **A CSS `display` declaration beats `[hidden]`.** Overlays (`#modal`, `#crash`) need an
   explicit `[hidden] { display: none }` rule or they scrim the whole game.
 - **Grid tracks must be `minmax(0, …)`.** A track's automatic minimum is its content's
   min-content size, so the wide build drawer will otherwise push every sibling — including the
   canvas — past the viewport, and the map ends up drawn off screen on a phone.
-- **Only the first layout frames the map.** `relayout()` calls `centreOn` once and thereafter
-  only `clampCamera`. Every later resize — opening the build drawer, the browser toolbar
-  sliding away, the keyboard appearing — must leave the view where the player put it.
-  Re-centring on every resize meant opening the drawer threw away wherever they had panned to.
+- **The map re-frames itself to fit until the player first pans or zooms, then never again.**
+  `relayout()` calls `fitScale` + `centreOn` while `framed` is false; `onCameraMoved` from the
+  pointer layer sets it true, after which resizes only `clampCamera`.
+
+  Both halves are load-bearing and each was wrong on its own. Re-framing on *every* resize
+  meant opening the build drawer threw away wherever the player had panned to. Framing only on
+  the very first layout was too early: the drawer is populated after the canvas is first
+  measured, so the map was fitted to a viewport some eighty pixels taller than the one it
+  ended up in — about five tiles, which hung off the bottom with no way to zoom out. iOS
+  compounds it, resolving safe-area insets and the standalone viewport a beat after paint.
 - Verifying the running game in a **background browser tab** is unreliable: `requestAnimationFrame`
   is throttled, so the day appears to crawl. That is the frame clamp working, not a bug.
 - **`pagehide` autosave will resurrect a deleted save.** `window.location.reload()` fires

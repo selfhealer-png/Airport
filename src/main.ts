@@ -204,22 +204,36 @@ function start(): void {
 
   let dragFrom: TileIndex | null = null;
   let placement: Placement | null = null;
+  /** False until the player pans or zooms; while false the map keeps re-fitting itself. */
   let framed = false;
   let accumulator = 0;
   let lastFrame = performance.now();
 
+  /*
+   * The map re-frames itself to fit until the player first pans or zooms, and never again
+   * after that.
+   *
+   * Framing only on the very first layout was too early: the drawer is populated after the
+   * canvas is measured, so the map was fitted to a viewport a good eighty pixels taller than
+   * the one it ended up with — about five tiles' worth, which then hung off the bottom with
+   * no way to zoom out. iOS makes it worse, resolving safe-area insets and the standalone
+   * viewport a beat after first paint.
+   *
+   * Re-framing on *every* resize is the opposite mistake: opening the build drawer would
+   * throw away wherever the player had panned to. Tying it to whether they have taken control
+   * gets both — the layout can settle however it likes on the way in, and the moment they
+   * touch the map it is theirs.
+   */
   const relayout = (): void => {
     if (!renderer.resize()) return;
     const { width, height } = renderer.viewport;
+
     if (!framed) {
       camera.scale = fitScale(state.airport.map, width, height, deviceRatio());
-      framed = true;
       centreOn(camera, state.airport.map, width, height);
       return;
     }
-    // Only the *first* layout frames the map. Every later resize — opening the build drawer,
-    // the browser toolbar sliding away, the keyboard appearing — must leave the view where
-    // the player put it, and merely stop it showing empty space beyond the edge.
+
     clampCamera(camera, state.airport.map, width, height);
   };
 
@@ -334,6 +348,9 @@ function start(): void {
     },
     onBuildMove(tile) {
       updatePlacement(tile);
+    },
+    onCameraMoved() {
+      framed = true;
     },
     onBuildEnd() {
       const tool = drawer.selected;
