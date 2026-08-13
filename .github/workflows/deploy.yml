@@ -24,6 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Turns Pages on for the repository if it is not already, and fails loudly if it cannot.
+      # Without this the deploy step dies with "Get Pages site failed" whenever the repository
+      # setting has not been switched to GitHub Actions by hand — which is easy to miss, and
+      # gives no clue what is wrong from the URL end.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
