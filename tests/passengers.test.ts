@@ -68,7 +68,7 @@ describe('passengers', () => {
     expect(result.passengersTurnedAway).toBe(aircraftClass('widebody').passengers - capacity);
   });
 
-  it('charges the overflow against reputation, not just against the takings', () => {
+  it('charges the overflow against the takings', () => {
     const roomy = airport(4);
     const cramped = airport(0);
     const schedule = [arrival(0, 'narrowbody')];
@@ -76,7 +76,9 @@ describe('passengers', () => {
     runDay(roomy, schedule);
     runDay(cramped, schedule);
 
-    expect(cramped.reputation).toBeLessThan(roomy.reputation);
+    // Both aeroplanes landed, so both banked a landing fee. The difference is entirely the
+    // people the small terminal could not get through the door.
+    expect(cramped.cash).toBeLessThan(roomy.cash);
   });
 
   it('spends the day capacity across flights, not per flight', () => {

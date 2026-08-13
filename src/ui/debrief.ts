@@ -43,8 +43,9 @@ export interface DebriefResult {
   readonly landed: number;
   readonly diverted: number;
   readonly crashed: number;
+  /** Aeroplanes booked in today, landed or not. The denominator of the service level. */
+  readonly scheduled: number;
   readonly cash: number;
-  readonly reputation: number;
   readonly passengers: number;
   readonly passengersTurnedAway: number;
 }
@@ -54,7 +55,6 @@ export function summariseDay(day: DayState): DebriefResult {
   let diverted = 0;
   let crashed = 0;
   let cash = 0;
-  let reputation = 0;
   let passengers = 0;
   let passengersTurnedAway = 0;
 
@@ -63,15 +63,51 @@ export function summariseDay(day: DayState): DebriefResult {
     if (event.outcome === 'diverted') diverted += 1;
     if (event.outcome === 'crashed') crashed += 1;
     cash += event.cash;
-    reputation += event.reputation;
     passengers += event.passengers;
     passengersTurnedAway += event.passengersTurnedAway;
   }
 
-  return { landed, diverted, crashed, cash, reputation, passengers, passengersTurnedAway };
+  return {
+    landed,
+    diverted,
+    crashed,
+    scheduled: day.schedule.length,
+    cash,
+    passengers,
+    passengersTurnedAway,
+  };
 }
 
-const signed = (value: number): string => (value >= 0 ? `+${value}` : `${value}`);
+/** The campaign's running service record, as `GameState` keeps it. */
+export interface CampaignRecord {
+  readonly landedTotal: number;
+  readonly scheduledTotal: number;
+}
+
+const percent = (landed: number, scheduled: number): string =>
+  scheduled === 0 ? '—' : `${Math.round((landed / scheduled) * 100)}%`;
+
+/**
+ * How well the airport is serving the traffic it is offered, today and across the campaign.
+ *
+ * This replaced reputation, and the difference matters: reputation fed back into the schedule
+ * and could quietly delete a day's traffic. This only reports. Cash cannot do the job on its
+ * own because it only ever goes up, so without a line like this the player has no measure of
+ * whether they are getting better or simply getting richer more slowly.
+ */
+export function serviceLevel(day: DayState, campaign?: CampaignRecord): string[] {
+  const result = summariseDay(day);
+  const lines = [
+    `landed ${result.landed} of ${result.scheduled}  ·  ${percent(result.landed, result.scheduled)}`,
+  ];
+  if (campaign) {
+    lines.push(
+      `campaign ${campaign.landedTotal} of ${campaign.scheduledTotal}` +
+        `  ·  ${percent(campaign.landedTotal, campaign.scheduledTotal)}`,
+    );
+  }
+  return lines;
+}
 
 /** Renders the debrief into `root` and resolves when the player dismisses it. */
 export function showDebrief(
@@ -79,6 +115,7 @@ export function showDebrief(
   day: DayState,
   onContinue: () => void,
   finalDay = false,
+  campaign?: CampaignRecord,
 ): void {
   const result = summariseDay(day);
   const losses = groupLosses(day);
@@ -110,9 +147,16 @@ export function showDebrief(
 
   const money = document.createElement('p');
   money.className = 'debrief-money';
-  money.textContent =
-    `${result.cash >= 0 ? '+' : '−'}£${Math.abs(result.cash).toLocaleString()}` +
-    `  ·  reputation ${signed(result.reputation)}`;
+  money.textContent = `${result.cash >= 0 ? '+' : '−'}£${Math.abs(result.cash).toLocaleString()}`;
+
+  const service = document.createElement('p');
+  service.className = 'debrief-service';
+  for (const [index, line] of serviceLevel(day, campaign).entries()) {
+    const span = document.createElement('span');
+    span.textContent = line;
+    if (index > 0) span.className = 'service-campaign';
+    service.append(span);
+  }
 
   // Passengers are the second scoreboard: an airport can land everything and still be
   // failing, because the terminal turned half the people away at the door.
@@ -166,9 +210,9 @@ export function showDebrief(
     closing.textContent =
       'Fifty days from a grass field to this. The schedule holds at its heaviest from ' +
       'here, so the airport is yours to keep growing.';
-    panel.append(heading, tally, money, people, closing, reasons, button);
+    panel.append(heading, tally, money, service, people, closing, reasons, button);
   } else {
-    panel.append(heading, tally, money, people, reasons, button);
+    panel.append(heading, tally, money, service, people, reasons, button);
   }
   root.replaceChildren(panel);
   root.hidden = false;

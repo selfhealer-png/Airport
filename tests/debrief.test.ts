@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LEVEL_MEADOW } from '@/content/levels';
 import { addRunway, addStand, addTaxiwayRun, createGame } from '@/sim/airport';
 import { runDay } from '@/sim/step';
-import { groupLosses, summariseDay } from '@/ui/debrief';
+import { groupLosses, serviceLevel, summariseDay } from '@/ui/debrief';
 import type { GameState, ScheduledArrival } from '@/sim/types';
 import { fullyServiced } from './helpers';
 
@@ -79,5 +79,39 @@ describe('debrief', () => {
 
     const counts = groupLosses(day).map((g) => g.count);
     expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  });
+});
+
+/**
+ * The service level replaced reputation. It is the only running measure of how the airport is
+ * doing — cash cannot do the job, because cash only ever goes up — so its wording is pinned
+ * the same way the loss reasons are.
+ */
+describe('service level', () => {
+  it('reports the day against what was booked in', () => {
+    const state = grassField();
+    // Two light aircraft it can take, one commuter it never could.
+    const day = runDay(state, [arrival(0, 'light'), arrival(20, 'light'), arrival(1, 'commuter')]);
+
+    expect(serviceLevel(day)).toEqual(['landed 2 of 3  ·  67%']);
+  });
+
+  it('adds the campaign running total when there is one', () => {
+    const state = grassField();
+    const day = runDay(state, [arrival(0, 'light')]);
+
+    expect(serviceLevel(day, { landedTotal: 402, scheduledTotal: 511 })).toEqual([
+      'landed 1 of 1  ·  100%',
+      'campaign 402 of 511  ·  79%',
+    ]);
+  });
+
+  it('counts the campaign total as days are played, without feeding it back', () => {
+    const state = grassField();
+    runDay(state, [arrival(0, 'light'), arrival(1, 'commuter')]);
+    runDay(state, [arrival(0, 'light')]);
+
+    expect(state.landedTotal).toBe(2);
+    expect(state.scheduledTotal).toBe(3);
   });
 });

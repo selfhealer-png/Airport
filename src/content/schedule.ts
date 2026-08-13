@@ -5,17 +5,21 @@ import type { AircraftClassId, ScheduledArrival } from '@/sim/types';
 /**
  * Daily flight schedules — the game's waves.
  *
- * Difficulty rises on two axes at once: more aeroplanes, and heavier aeroplanes. Reputation
- * gates the heavy end, so an airport that keeps losing aircraft is not immediately handed
- * traffic it has just proved it cannot take.
+ * Difficulty rises on two axes at once: more aeroplanes, and heavier aeroplanes, both paced
+ * purely by the day number. The schedule is a fixed path: `(seed, day)` decides everything,
+ * so what is coming is knowable in advance and the player is being tested on their airport.
+ *
+ * There used to be a reputation input that thinned the heavy end. It read as a safety valve
+ * and behaved as a cliff: once every class fell under the weight floor the function fell back
+ * to trainers alone, so a bad day did not get a lighter schedule, it got the flying club and
+ * nothing else — a day of widebody infrastructure earning five hundred pounds. Removing it
+ * costs a pacing variable and nothing else; there was never a fail state attached to it.
  */
 
 interface Tier {
   readonly classId: AircraftClassId;
   /** First day this class can appear at all. */
   readonly fromDay: number;
-  /** Reputation at which airlines will send this class as often as they want to. */
-  readonly minReputation: number;
   /** Relative frequency once unlocked. */
   readonly weight: number;
 }
@@ -28,37 +32,47 @@ interface WeightedTier {
 /**
  * The campaign ladder, spread over fifty days.
  *
- * Two things are being paced at once. `fromDay` sets the story — roughly one new aeroplane
- * every three or four days, so there is nearly always something to build towards — and
- * `minReputation` is the safety valve: an airport that is losing aircraft does not get handed
- * heavier ones on schedule. Weights fall as the classes get heavier so the top of the ladder
- * stays a garnish rather than the whole day's traffic.
+ * `fromDay` sets the story — roughly one new aeroplane every three or four days, so there is
+ * nearly always something to build towards. Weights fall as the classes get heavier so the
+ * top of the ladder stays a garnish rather than the whole day's traffic.
  */
 const TIERS: readonly Tier[] = [
-  { classId: 'trainer', fromDay: 1, minReputation: 0, weight: 7 },
-  { classId: 'light', fromDay: 1, minReputation: 0, weight: 6 },
-  { classId: 'airtaxi', fromDay: 3, minReputation: 0, weight: 5 },
-  { classId: 'utility', fromDay: 5, minReputation: 30, weight: 5 },
-  { classId: 'bush', fromDay: 8, minReputation: 35, weight: 4 },
-  { classId: 'commuter', fromDay: 11, minReputation: 40, weight: 4 },
-  { classId: 'feeder', fromDay: 15, minReputation: 45, weight: 3 },
-  { classId: 'regional', fromDay: 19, minReputation: 50, weight: 3 },
-  { classId: 'regional-x', fromDay: 23, minReputation: 55, weight: 3 },
-  { classId: 'narrowbody', fromDay: 27, minReputation: 60, weight: 2 },
-  { classId: 'narrowbody-x', fromDay: 32, minReputation: 65, weight: 2 },
-  { classId: 'freighter', fromDay: 36, minReputation: 65, weight: 2 },
-  { classId: 'widebody', fromDay: 40, minReputation: 62, weight: 1 },
-  { classId: 'superheavy', fromDay: 45, minReputation: 70, weight: 1 },
+  { classId: 'trainer', fromDay: 1, weight: 7 },
+  { classId: 'light', fromDay: 1, weight: 6 },
+  { classId: 'airtaxi', fromDay: 3, weight: 5 },
+  { classId: 'utility', fromDay: 5, weight: 5 },
+  { classId: 'bush', fromDay: 8, weight: 4 },
+  { classId: 'commuter', fromDay: 11, weight: 4 },
+  { classId: 'feeder', fromDay: 15, weight: 3 },
+  { classId: 'regional', fromDay: 19, weight: 3 },
+  { classId: 'regional-x', fromDay: 23, weight: 3 },
+  { classId: 'narrowbody', fromDay: 27, weight: 2 },
+  { classId: 'narrowbody-x', fromDay: 32, weight: 2 },
+  { classId: 'freighter', fromDay: 36, weight: 2 },
+  { classId: 'widebody', fromDay: 40, weight: 1 },
+  { classId: 'superheavy', fromDay: 45, weight: 1 },
 
-  // Military work arrives late and stays occasional. It needs a runway no airliner can use,
-  // so the weights are deliberately thin — a dedicated strip should feel like a bet on a few
-  // very well paid movements, not a second airport running alongside the first.
-  { classId: 'fighter', fromDay: 30, minReputation: 55, weight: 2 },
-  { classId: 'transport', fromDay: 38, minReputation: 60, weight: 2 },
-  { classId: 'heavylift', fromDay: 45, minReputation: 68, weight: 1 },
+  /*
+   * Military work arrives late and stays occasional. It needs a runway no airliner can use,
+   * so the weights are deliberately thin — a dedicated strip should feel like a bet on a few
+   * very well paid movements, not a second airport running alongside the first.
+   *
+   * Reputation used to be doing half that thinning by accident. On the fixed path the weights
+   * have to carry it alone, and at the old 2/2/1 the three classes together were 34% of every
+   * day from 45 on — a share at which the strip stops being a bet and becomes mandatory
+   * infrastructure. Retuned against the measured share rather than by eye: 25% at the peak.
+   *
+   * The fractions are deliberate. Age-thinning halves a weight every six days behind the
+   * newest class, and anything under 0.35 is dropped from the day entirely — so `fighter` at
+   * a round 1 would *vanish* from day 45, taking it out of the forecast as well as the sky.
+   * That is the same cliff reputation used to produce. 1.6 thins to 0.4 and keeps flying.
+   */
+  { classId: 'fighter', fromDay: 30, weight: 1.6 },
+  { classId: 'transport', fromDay: 38, weight: 0.8 },
+  { classId: 'heavylift', fromDay: 45, weight: 0.5 },
 ];
 
-/** The campaign runs fifty days. Surviving all of them with a licence intact is the win. */
+/** The campaign runs fifty days, after which the schedule holds at its heaviest. */
 export const CAMPAIGN_DAYS = 50;
 
 /** Arrivals stop before the day ends so the last aeroplane has time to be dealt with. */
@@ -88,31 +102,19 @@ export function arrivalsForDay(day: number): number {
 /**
  * Which classes fly today, and how often.
  *
- * Two adjustments to each class's base weight.
- *
- * **Age.** A class halves in frequency for every six days it is behind the newest one, so a
- * day-40 airport is not still spending most of its movements on club trainers. Nothing ever
- * vanishes completely — a real airfield always has light traffic, and it keeps the small
- * stands worth owning.
- *
- * **Reputation.** This used to be a hard gate, and it produced a vicious oscillation: a good
- * day pushed reputation over a threshold, a fleet of aeroplanes the airport had never seen
- * arrived the next morning and all diverted, reputation collapsed, and they vanished again.
- * Worse, because a class below its threshold never appeared in the forecast either, the
- * player had no way to see it coming and no way to prepare — the game punished them for
- * something it had refused to tell them about. So reputation now *thins* heavy traffic
- * instead of hiding it: a struggling airport sees the occasional big aeroplane, which is a
- * warning it can act on rather than an ambush.
+ * One adjustment to each class's base weight: **age**. A class halves in frequency for every
+ * six days it is behind the newest one, so a day-40 airport is not still spending most of its
+ * movements on club trainers. Nothing ever vanishes completely — a real airfield always has
+ * light traffic, and it keeps the small stands worth owning.
  */
-function availableTiers(day: number, reputation: number): WeightedTier[] {
+export function availableTiers(day: number): WeightedTier[] {
   const unlocked = TIERS.filter((t) => day >= t.fromDay);
   if (unlocked.length === 0) return [{ classId: TIERS[0]!.classId, weight: 1 }];
 
   const newest = Math.max(...unlocked.map((t) => t.fromDay));
   const weighted = unlocked.map((tier) => {
     const generationsBehind = Math.floor(Math.max(0, newest - tier.fromDay) / 6);
-    const standing = Math.min(1, Math.max(0, 1 + (reputation - tier.minReputation) / 30));
-    return { classId: tier.classId, weight: (tier.weight / 2 ** generationsBehind) * standing };
+    return { classId: tier.classId, weight: tier.weight / 2 ** generationsBehind };
   });
 
   // Below a trickle, a class is not a warning any more, just noise in the forecast.
@@ -124,13 +126,9 @@ function availableTiers(day: number, reputation: number): WeightedTier[] {
  * Builds one day's schedule. Deterministic in `(seed, day)`, so the same day always brings
  * the same traffic — the player is being tested on their airport, not on their luck.
  */
-export function generateSchedule(
-  day: number,
-  reputation: number,
-  seed: number,
-): readonly ScheduledArrival[] {
+export function generateSchedule(day: number, seed: number): readonly ScheduledArrival[] {
   const random = createRandom(seed * 7919 + day);
-  const tiers = availableTiers(day, reputation);
+  const tiers = availableTiers(day);
   const totalWeight = tiers.reduce((sum, t) => sum + t.weight, 0);
   const count = arrivalsForDay(day);
   const window = DAY_SECONDS * LAST_ARRIVAL_FRACTION;

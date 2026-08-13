@@ -20,15 +20,17 @@ import type {
  * whole aircraft state machine.
  */
 
-export const SNAPSHOT_VERSION = 4;
+export const SNAPSHOT_VERSION = 5;
 
 export interface Snapshot {
   readonly version: number;
   readonly levelId: string;
   readonly day: number;
   readonly cash: number;
-  readonly reputation: number;
   readonly seed: number;
+  /** The campaign service record. Descriptive only; nothing reads it back into the game. */
+  readonly landedTotal: number;
+  readonly scheduledTotal: number;
   readonly nextEntityId: number;
   readonly runways: ReadonlyArray<{
     id: string;
@@ -70,8 +72,9 @@ export function toSnapshot(state: GameState): Snapshot {
     levelId: airport.map.id,
     day: state.day,
     cash: state.cash,
-    reputation: state.reputation,
     seed: state.seed,
+    landedTotal: state.landedTotal,
+    scheduledTotal: state.scheduledTotal,
     nextEntityId: airport.nextEntityId,
     // Reservations and crash closures are per-day and rebuilt by `startDay`, so they are
     // not part of a save.
@@ -118,7 +121,7 @@ export function fromSnapshot(raw: unknown): GameState | null {
   if (!map) return null;
 
   if (!isFiniteNumber(data.day) || !isFiniteNumber(data.cash)) return null;
-  if (!isFiniteNumber(data.reputation) || !isFiniteNumber(data.seed)) return null;
+  if (!isFiniteNumber(data.seed)) return null;
 
   const airport = createAirport(map);
   const inBounds = (x: number, y: number): boolean =>
@@ -187,11 +190,14 @@ export function fromSnapshot(raw: unknown): GameState | null {
   return {
     airport,
     cash: data.cash,
-    reputation: data.reputation,
     day: Math.max(1, Math.floor(data.day)),
     phase: 'planning',
     current: null,
     seed: data.seed,
+    // Tolerated rather than required: the service record is a scoreboard, so a save missing
+    // it should start counting from zero, not be thrown away.
+    landedTotal: isFiniteNumber(data.landedTotal) ? data.landedTotal : 0,
+    scheduledTotal: isFiniteNumber(data.scheduledTotal) ? data.scheduledTotal : 0,
   };
 }
 
@@ -211,8 +217,9 @@ export function restoreInto(target: GameState, raw: unknown): boolean {
 
   target.airport = restored.airport;
   target.cash = restored.cash;
-  target.reputation = restored.reputation;
   target.day = restored.day;
+  target.landedTotal = restored.landedTotal;
+  target.scheduledTotal = restored.scheduledTotal;
   // A day in progress is never snapshotted, so undo always lands back in planning.
   target.phase = 'planning';
   target.current = null;

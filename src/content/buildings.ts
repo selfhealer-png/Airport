@@ -76,20 +76,6 @@ export function passengerRevenue(terminal: TerminalLevel, shops: number): number
   return (PASSENGER_FARE + shops * SHOP_REVENUE_PER_PASSENGER) * terminal.fareMultiplier;
 }
 
-/** Reputation swing per outcome. Landings recover slowly; crashes hurt badly. */
-export const REPUTATION = {
-  // Landings have to out-earn the occasional diversion, or a single bad day starts a spiral
-  // the player has no way to climb out of.
-  perLanding: 2,
-  perDiversion: -5,
-  perCrash: -30,
-  /** Arriving to a terminal with no room for you. Mild per flight, ruinous as a habit. */
-  perOverflowedFlight: -2,
-  /** A fire station means a crash is contained rather than catastrophic. */
-  crashWithFireStation: -12,
-  max: 100,
-} as const;
-
 /** Cash penalty for a crash, on top of the lost fare. */
 export const CRASH_COST = 2_500;
 

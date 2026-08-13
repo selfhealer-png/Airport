@@ -100,11 +100,6 @@ body {
   color: var(--accent);
 }
 
-.hud-rep::before {
-  content: "★ ";
-  opacity: 0.7;
-}
-
 /*
  * The canvas is absolutely positioned inside this wrapper rather than sized with height:100%.
  * A canvas in a `1fr` grid row with a percentage height creates a circular dependency — the
@@ -452,9 +447,27 @@ body {
 .tone-muted .tally-number { opacity: 0.5; }
 
 .debrief-money {
-  margin: 14px 0;
+  margin: 14px 0 6px;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
+}
+
+/*
+ * The service level: how much of the traffic the airport actually took, today and so far.
+ * Set quietly under the money, because unlike the money it is a measure rather than a reward.
+ */
+.debrief-service {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 14px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.debrief-service .service-campaign {
+  opacity: 0.65;
 }
 
 .debrief-reasons {

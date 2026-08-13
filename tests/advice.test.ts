@@ -117,7 +117,7 @@ describe('traffic forecast', () => {
   it('counts every class booked in for the day', () => {
     const state = grassStrip();
     const forecast = tomorrowsTraffic(state);
-    const scheduled = generateSchedule(state.day, state.reputation, state.seed);
+    const scheduled = generateSchedule(state.day, state.seed);
 
     expect(forecast.reduce((sum, e) => sum + e.count, 0)).toBe(scheduled.length);
     // Most numerous first, so the pill the player reads first is the one that matters most.
@@ -145,7 +145,7 @@ describe('traffic forecast', () => {
       tomorrowsTraffic(state).filter((e) => e.problem).map((e) => e.classId),
     );
 
-    const day = runDay(state, generateSchedule(state.day, state.reputation, state.seed));
+    const day = runDay(state, generateSchedule(state.day, state.seed));
     for (const event of day.events) {
       if (blocked.has(event.classId)) expect(event.outcome).not.toBe('landed');
     }

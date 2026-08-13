@@ -99,7 +99,7 @@ function roadAdvice(state: GameState, services: Services): Advice[] {
  */
 function militaryAdvice(state: GameState): Advice[] {
   const advice: Advice[] = [];
-  const schedule = generateSchedule(state.day, state.reputation, state.seed);
+  const schedule = generateSchedule(state.day, state.seed);
   const militaryBooked = schedule.filter((a) => aircraftClass(a.classId).use === 'military').length;
   const strips = state.airport.runways.filter((r) => r.use === 'military');
 
@@ -130,7 +130,7 @@ function terminalAdvice(state: GameState, services: Services): Advice[] {
   const advice: Advice[] = [];
   const level = terminalLevel(workingTerminalLevel(state.airport, services));
 
-  const expected = generateSchedule(state.day, state.reputation, state.seed).reduce(
+  const expected = generateSchedule(state.day, state.seed).reduce(
     (sum, arrival) => sum + aircraftClass(arrival.classId).passengers,
     0,
   );
@@ -270,7 +270,7 @@ export interface ForecastEntry {
  * would then refuse.
  */
 export function tomorrowsTraffic(state: GameState): ForecastEntry[] {
-  const schedule = generateSchedule(state.day, state.reputation, state.seed);
+  const schedule = generateSchedule(state.day, state.seed);
   const services = buildServices(state.airport);
 
   const counts = new Map<AircraftClassId, number>();
@@ -293,7 +293,7 @@ export function tomorrowsTraffic(state: GameState): ForecastEntry[] {
 
 /** Passengers booked in for the day, for the planning HUD. */
 export function expectedPassengers(state: GameState): number {
-  return generateSchedule(state.day, state.reputation, state.seed).reduce(
+  return generateSchedule(state.day, state.seed).reduce(
     (sum, arrival) => sum + aircraftClass(arrival.classId).passengers,
     0,
   );

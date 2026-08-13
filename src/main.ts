@@ -61,16 +61,14 @@ function start(): void {
   const drawerRoot = document.querySelector<HTMLElement>('#drawer');
   const modalRoot = document.querySelector<HTMLElement>('#modal');
   const cashLabel = document.querySelector<HTMLElement>('#hud-cash');
-  const repLabel = document.querySelector<HTMLElement>('#hud-rep');
   const dayLabel = document.querySelector<HTMLElement>('#hud-day');
-  if (!canvas || !wrap || !drawerRoot || !modalRoot || !cashLabel || !repLabel || !dayLabel) {
+  if (!canvas || !wrap || !drawerRoot || !modalRoot || !cashLabel || !dayLabel) {
     throw new Error('App shell is missing an expected element.');
   }
 
   const drawerHost = drawerRoot;
   const modalHost = modalRoot;
   const cash = cashLabel;
-  const rep = repLabel;
   const dayText = dayLabel;
 
   // A previous session's airport, or a new field if there is nothing to restore.
@@ -284,7 +282,7 @@ function start(): void {
     // Saved before the day rather than during it: a day in progress is not persisted, so a
     // reload drops the player back into planning for this same day.
     saveGame(state);
-    startDay(state, generateSchedule(state.day, state.reputation, state.seed));
+    startDay(state, generateSchedule(state.day, state.seed));
     drawerHost.replaceChildren(dayBar.element);
     if (state.current) dayBar.update(state.current);
   }
@@ -303,6 +301,7 @@ function start(): void {
         showPlanning();
       },
       state.day >= CAMPAIGN_DAYS,
+      { landedTotal: state.landedTotal, scheduledTotal: state.scheduledTotal },
     );
   }
 
@@ -356,7 +355,6 @@ function start(): void {
       shownCash = state.cash;
     }
     cash.textContent = `£${state.cash.toLocaleString()}`;
-    rep.textContent = `${state.reputation}`;
     dayText.textContent = `Day ${state.day}`;
   }
 

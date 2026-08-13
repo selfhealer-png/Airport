@@ -3,12 +3,10 @@ import {
   CRASH_COST,
   FUEL_FARM_TURNAROUND_FACTOR,
   passengerRevenue,
-  REPUTATION,
   terminalLevel,
   towerLevel,
 } from '@/content/buildings';
 import {
-  hasWorkingFireStation,
   hasWorkingFuelFarm,
   workingShops,
   workingTerminalLevel,
@@ -121,6 +119,10 @@ export function startDay(state: GameState, schedule: readonly ScheduledArrival[]
     passengersHandled: 0,
     passengersTurnedAway: 0,
   };
+  // The campaign's service record counts everything that was booked in, whether or not it
+  // ever gets down. Counted here rather than at the debrief so a day abandoned mid-flight
+  // still shows up as traffic the airport was offered.
+  state.scheduledTotal += schedule.length;
   state.current = day;
   state.phase = 'day';
   return day;
@@ -175,7 +177,7 @@ function releaseStand(airport: Airport, aircraft: Aircraft): void {
 function record(state: GameState, day: DayState, event: DayEvent): void {
   day.events.push(event);
   state.cash += event.cash;
-  state.reputation = Math.min(REPUTATION.max, state.reputation + event.reputation);
+  if (event.outcome === 'landed') state.landedTotal += 1;
 }
 
 /**
@@ -207,9 +209,6 @@ function land(state: GameState, day: DayState, aircraft: Aircraft): void {
     reason: null,
     atSeconds: day.elapsed,
     cash: fare + fromPassengers,
-    // People left standing in a shed remember it. Small per aeroplane, heavy over a day of
-    // turning them away.
-    reputation: REPUTATION.perLanding + (turnedAway > 0 ? REPUTATION.perOverflowedFlight : 0),
     passengers: processed,
     passengersTurnedAway: turnedAway,
   });
@@ -226,7 +225,6 @@ function divert(state: GameState, day: DayState, aircraft: Aircraft): void {
     reason: aircraft.blockedReason,
     atSeconds: day.elapsed,
     cash: 0,
-    reputation: REPUTATION.perDiversion,
     passengers: 0,
     passengersTurnedAway: 0,
   });
@@ -235,7 +233,7 @@ function divert(state: GameState, day: DayState, aircraft: Aircraft): void {
 /**
  * An aircraft the tower never had control of comes down on the airfield. The wreckage closes
  * the longest runway for the rest of the day — losing exactly the strip the biggest earners
- * needed. A fire station contains the damage.
+ * needed.
  */
 function crash(state: GameState, day: DayState, aircraft: Aircraft): void {
   aircraft.phase = 'crashed';
@@ -252,9 +250,6 @@ function crash(state: GameState, day: DayState, aircraft: Aircraft): void {
     reason: aircraft.blockedReason ?? 'stack-overflow',
     atSeconds: day.elapsed,
     cash: -CRASH_COST,
-    reputation: hasWorkingFireStation(state.airport, day.services)
-      ? REPUTATION.crashWithFireStation
-      : REPUTATION.perCrash,
     passengers: 0,
     passengersTurnedAway: 0,
   });

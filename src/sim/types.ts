@@ -260,7 +260,6 @@ export interface DayEvent {
   readonly reason: BlockReason | null;
   readonly atSeconds: number;
   readonly cash: number;
-  readonly reputation: number;
   /** Passengers processed through the terminal from this aircraft. */
   readonly passengers: number;
   /** Passengers this aircraft brought that the terminal could not take. */
@@ -292,9 +291,16 @@ export type GamePhase = 'planning' | 'day' | 'debrief';
 export interface GameState {
   airport: Airport;
   cash: number;
-  reputation: number;
   day: number;
   phase: GamePhase;
   current: DayState | null;
   seed: number;
+  /**
+   * The campaign's service record: aeroplanes that got down, against aeroplanes that were
+   * booked in. Purely descriptive — the debrief reports it and nothing reads it back into the
+   * schedule, which is the whole point of the fixed path. Cash cannot do this job because
+   * cash only ever goes up.
+   */
+  landedTotal: number;
+  scheduledTotal: number;
 }

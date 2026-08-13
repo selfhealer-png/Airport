@@ -23,7 +23,6 @@ import type {
  * cannot buy a working airport is not difficulty, it is a dead end.
  */
 export const STARTING_CASH = 2_400;
-export const STARTING_REPUTATION = 50;
 
 export function createAirport(map: LevelMap): Airport {
   return {
@@ -117,11 +116,12 @@ export function createGame(map: LevelMap, seed = 1): GameState {
   return {
     airport: createAirport(map),
     cash: STARTING_CASH,
-    reputation: STARTING_REPUTATION,
     day: 1,
     phase: 'planning',
     current: null,
     seed,
+    landedTotal: 0,
+    scheduledTotal: 0,
   };
 }
 

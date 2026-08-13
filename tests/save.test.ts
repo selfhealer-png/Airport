@@ -14,8 +14,9 @@ import { runwayLength, type GameState } from '@/sim/types';
 function builtGame(): GameState {
   const state = createGame(LEVEL_MEADOW, 7);
   state.cash = 4_321;
-  state.reputation = 63;
   state.day = 9;
+  state.landedTotal = 71;
+  state.scheduledTotal = 88;
   addRunway(state.airport, 8, 10, 17, 'gravel');
   addTaxiwayRun(state.airport, 9, 14, 11, 14);
   addStand(state.airport, 12, 14, 'medium');
@@ -33,10 +34,11 @@ describe('save round trip', () => {
     expect(restored).not.toBeNull();
     expect({
       cash: restored!.cash,
-      reputation: restored!.reputation,
       day: restored!.day,
       seed: restored!.seed,
-    }).toEqual({ cash: 4_321, reputation: 63, day: 9, seed: 7 });
+      landedTotal: restored!.landedTotal,
+      scheduledTotal: restored!.scheduledTotal,
+    }).toEqual({ cash: 4_321, day: 9, seed: 7, landedTotal: 71, scheduledTotal: 88 });
   });
 
   it('restores the layout, including the taxiway mask', () => {

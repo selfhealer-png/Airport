@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { LEVEL_MEADOW } from '@/content/levels';
 import { generateSchedule } from '@/content/schedule';
-import { REPUTATION } from '@/content/buildings';
 import { addRunway, addStand, addTaxiwayRun, createGame } from '@/sim/airport';
 import { buildLinks } from '@/sim/connectivity';
 import { fullyServiced } from './helpers';
@@ -144,7 +143,8 @@ describe('fuel, diversion and crashing', () => {
     const event = day.events[0];
     expect(event?.outcome).toBe('diverted');
     expect(event?.reason).toBe('no-runway-length');
-    expect(state.reputation).toBe(50 + REPUTATION.perDiversion);
+    // A diversion costs the fare and nothing else — the airport is tested, not punished.
+    expect(event?.cash).toBe(0);
   });
 
   it('turns away aircraft the airport structurally cannot take, without a crash', () => {
@@ -272,21 +272,30 @@ describe('throughput', () => {
 
 describe('schedules', () => {
   it('is deterministic for a given seed and day', () => {
-    expect(generateSchedule(5, 60, 99)).toEqual(generateSchedule(5, 60, 99));
+    expect(generateSchedule(5, 99)).toEqual(generateSchedule(5, 99));
   });
 
-  it('withholds heavy aircraft until reputation supports them', () => {
-    // Day 30 is past the narrowbody's debut, so the only thing separating these two is how
-    // well the airport has been run.
-    const struggling = generateSchedule(30, 20, 3).map((a) => a.classId);
-    const thriving = generateSchedule(30, 90, 3).map((a) => a.classId);
+  it('depends on nothing but the seed and the day', () => {
+    // The fixed path is the point: what arrives tomorrow is knowable today, whatever
+    // happened yesterday. Nothing about how the airport has been run is an input.
+    const early = generateSchedule(12, 3).map((a) => a.classId);
+    const late = generateSchedule(30, 3).map((a) => a.classId);
 
-    expect(struggling).not.toContain('narrowbody');
-    expect(thriving).toContain('narrowbody');
+    expect(generateSchedule(12, 3).map((a) => a.classId)).toEqual(early);
+    // Day pacing still escalates: a class that has not debuted cannot turn up early.
+    expect(early).not.toContain('narrowbody');
+    expect(late).toContain('narrowbody');
+  });
+
+  it('keeps light traffic flying late in the campaign rather than collapsing to one class', () => {
+    // Age-thinning shrinks the old classes; it must never delete the schedule and replace
+    // it with a single tier, which is what the old reputation floor did on a bad day.
+    const classes = new Set(generateSchedule(45, 42).map((a) => a.classId));
+    expect(classes.size).toBeGreaterThan(2);
   });
 
   it('leaves room at the end of the day for the last arrival to be handled', () => {
-    for (const arrivalItem of generateSchedule(9, 80, 7)) {
+    for (const arrivalItem of generateSchedule(9, 7)) {
       expect(arrivalItem.atSeconds).toBeLessThan(DAY_SECONDS);
     }
   });
