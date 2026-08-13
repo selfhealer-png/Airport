@@ -91,6 +91,15 @@ function start(): void {
   planningBody.className = 'drawer-body';
   const drawer = createDrawer(planningBody, state, {
     onBeforeChange: () => history.push(capture(state)),
+    /*
+     * Arming a tool collapses the drawer to a full-size map.
+     *
+     * The tool deliberately stays armed — see `paintShell()` — so this is exactly what
+     * tapping `Close` already did, and the player had to do it manually every single time:
+     * pick a chip, then reach for a second button before there was any map worth drawing on.
+     * The bar's toggle, now labelled with the armed tool, is the way back in.
+     */
+    onToolArmed: () => setExpanded(false),
   });
 
   const planningPanel = document.createElement('div');

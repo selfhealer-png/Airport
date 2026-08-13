@@ -52,7 +52,7 @@ behaviour runs without a browser environment.
 
 ```
 src/
-  sim/        state, stepDay(), aircraft lifecycle, runway assignment, economy, reputation
+  sim/        state, stepDay(), aircraft lifecycle, runway/helipad assignment, economy
   content/    aircraft classes, facility levels, level maps, schedules — balance data only
   render/     camera + canvas drawing of sim state
   sprites/    palette, authored pixel data, and the atlas baker
@@ -64,6 +64,28 @@ scripts/      icon generation and the day harness (run via vite-node, not node)
 ```
 
 ### How a day resolves
+
+The schedule is a **fixed path**: `generateSchedule(day, seed)` decides everything, so what
+arrives tomorrow is knowable today. There used to be a reputation input that claimed to *thin*
+heavy traffic and in fact deleted it — once every class fell under the 0.35 weight floor,
+`availableTiers()` returned its fallback of `TIERS[0]`, so a bad day got club trainers and
+nothing else. Nothing else was attached to it: there is no licence-revoked fail state anywhere
+in `src/`, the campaign simply ends at day 50. What replaced it is descriptive only —
+`landedTotal`/`scheduledTotal` on `GameState`, reported by the debrief as a service level, read
+by nothing.
+
+Two consequences worth knowing before touching `content/schedule.ts`:
+
+- **Weights are fractional on purpose.** Age-thinning halves a weight for every six days a
+  class is behind the newest, and anything under `0.35` is dropped from the day entirely. A
+  round `1` for `fighter` thins to `0.25` and the class vanishes from the sky *and the
+  forecast* at day 45 — the same cliff reputation used to produce. Worse, `1.4` thins to
+  `0.34999999999999997`, which fails the `>=` test while looking like it should pass.
+- **Traffic that does not use the main runways is measured, not guessed.** Military and rotary
+  classes each sit around 16–21% of the late campaign. They were both well past that when
+  first tuned, and at those numbers a military strip and a helipad stop being bets and become
+  mandatory infrastructure. Check the share (`availableTiers` weights against the total) rather
+  than reasoning about individual numbers.
 
 `stepDay()` in `src/sim/step.ts` runs a fixed order every tick, and the order is load-bearing:
 spawn arrivals, decide who the tower is managing, burn fuel and resolve anyone who ran dry,
@@ -158,6 +180,39 @@ Two details worth keeping:
 `sim/advice.ts` warns in both directions: military movements booked with no strip to take
 them, and a strip standing idle on a day with nothing military due.
 
+### Rotorcraft need no runway at all
+
+A **helipad is a runway and a stand in one tile**. A helicopter lands on it, parks on it and
+lifts off it, so there is no length, no surface, no taxi link and no stand size in the way.
+That makes the late campaign a placement problem again rather than "extend the strip once
+more", which is the whole reason the feature exists.
+
+`runwayLength: 0` is the sentinel that marks a rotor class (`isRotorcraft()` in
+`content/aircraft.ts`). `MIN_RUNWAY_TILES` is 3 and `checkRunway` enforces it, so a zero can
+never mean a very short runway. `minSurface`, `use` and `standSize` stay on `AircraftClass` and
+are simply unread for those classes — cheaper than forking the interface for two entries.
+
+Four rules it does **not** escape, each of which would break something if relaxed:
+
+- A pad with no road does nothing, same as everything else since roads.
+- A rotor movement still costs the tower a movement. Exempting it would let a helipad-only
+  airport bypass the tower entirely.
+- A pad is held from approach through the whole turnaround — there is no pushback that frees a
+  gate early — so **pad count** is what a busy rotary day needs.
+- `structuralBlock()` answers `no-helipad` for a rotor class on a fully paved airport, never
+  `no-runway-length`. Telling the player to lengthen a runway would send them to spend
+  thousands on the wrong thing.
+
+The phase model **branches explicitly** in `advanceTimed()`: `landing → parked → departing`,
+with no taxi phase. Do not instead set `taxiSeconds: 0` and let the phase complete invisibly —
+it works, and it leaves a dead phase that every other piece of code touching `AircraftPhase`
+has to know is a one-tick no-op for two specific classes.
+
+A rotor crash closes the pad it came down on, not the longest runway. There is no "longest" pad
+to sort by, and taking the strip the airliners needed for something that never touched it would
+be a nonsense. `CLOSED_BY_WRECKAGE` in `step.ts` is how — a reservation to an id no aircraft can
+hold, cleared by `startDay` with every other reservation.
+
 ### Passengers and retail
 
 A landing pays twice: a **landing fee** that is always collected, and the **passengers**, but
@@ -169,8 +224,32 @@ nothing about the three hundred people on board. The **freighter carries none**,
 it rewards a long runway before a big terminal and keeps earning on a day the terminal is
 swamped.
 
-Shops sit *inside* the terminal, which on a tile grid means orthogonally touching it, and are
-capped by `TerminalLevel.shopSlots`. `checkFacility` refuses a bad placement rather than
+**Capacity pools across terminals.** Level 4 caps at 2,600 passengers a day and the schedule
+books over three thousand by day 48, so a second building is the only way past a ceiling that
+would otherwise simply stop the airport growing. `workingTerminalCapacity()` in
+`sim/airport.ts` is the single source of that: passenger capacity and shop slots **sum**, and
+the fare multiplier is a **capacity-weighted average**.
+
+That asymmetry is the design, not an implementation detail. Summing the multiplier would make
+two level-1 terminals worth 2.3x, which with doubled capacity is roughly four times the revenue
+for two of the cheapest buildings in the game — nobody would upgrade anything again.
+`ADDITIONAL_TERMINAL_COST_MULTIPLIER` is the other half: without it a second level-1 building
+is a cheaper way to buy 220 passengers a day than a level-2 upgrade. Together they keep "build
+another" and "upgrade the one you have" a real choice; the auto-player reaches a second terminal
+on day 44, after maxing the first.
+
+One trap: `workingTerminalCapacity` must keep the **level-0 floor**. With no working terminal at
+all the old code fell through to level 0 — a windsock and a gate in a hedge, 60 passengers a day
+— and a naive sum returns zero instead, which silently breaks day one, where those 60 people are
+the entire passenger economy.
+
+`checkUpgradeFacility`/`applyUpgradeFacility` take a **facility id**, not a type. Keying on type
+only ever worked because there was one of each, and "upgrade the terminal" stops being a
+question with an answer once there are two. Note that an id and a type are both `string`, so the
+typechecker will not catch a stale call site — the tests are what pin it.
+
+Shops sit *inside* the terminal, which on a tile grid means orthogonally touching **any working
+terminal**, and are capped by the summed `TerminalLevel.shopSlots`. `checkFacility` refuses a bad placement rather than
 letting it be built and quietly earn nothing — £3,500 is too much to lose to something the
 game could simply have declined.
 
@@ -217,6 +296,27 @@ it that way: giving `sim/` positions would break headless testing for no gain.
 
 `ui/debrief.ts` groups losses by **reason**, not by aeroplane, and `tests/debrief.test.ts`
 pins that wording. It is the only feedback the player gets, so treat its text as game logic.
+
+### The build menu
+
+`src/ui/drawer.ts` renders **labelled sections in a wrapping grid**, not one horizontally
+scrolling row. The row was fine at four chips and unusable at sixteen: the only cue that "fire
+station" existed at all was a scrollbar phones do not draw. `chipSections()` owns the grouping
+and `chips()` flattens it back for every lookup that does not care about layout — `Tool`,
+`BuildCheck` and `minimumCost()` know nothing about sections.
+
+Height is the cost, and **auto-collapse is what pays it**: arming a tool fires
+`DrawerHandlers.onToolArmed`, which the shell turns into `setExpanded(false)`. That is exactly
+what tapping `Close` already did, and the player had to do it manually every single time. Two
+details:
+
+- It does **not** fire on deselection — putting a tool down should not move the drawer — and it
+  does **not** fire for **demolish**. Every other tool arming onto a suddenly full-size map is
+  covered by undo; demolish is the one combination where a stray drag takes a whole runway out
+  before the player has noticed the drawer went away.
+- The grid's tracks are `minmax(min(140px, 100%), 1fr)`. See the gotcha below about grid tracks:
+  a long chip label in an `auto` track pushes the drawer *and the canvas beside it* past the
+  viewport.
 
 ### Undo, and the collapsed drawer
 
@@ -379,9 +479,11 @@ currently the only thing that needs it.
 - **TypeScript 7** (the native compiler). `baseUrl` was removed; `paths` entries must be
   relative (`"./src/*"`).
 - Balance numbers belong in `src/content/`, never inlined into `sim/` logic.
-- **A save stores roads and runway use, and is version 4.** Bump `SNAPSHOT_VERSION` whenever the shape
-  changes; old saves are then rejected and a fresh game starts, which is the intended
-  migration story.
+- **A save stores roads, runway use and helipads, and is version 6.** Bump `SNAPSHOT_VERSION`
+  whenever the shape changes; old saves are then rejected and a fresh game starts, which is the
+  intended migration story. Anything with an id must also join the `nextEntityId` scan in
+  `fromSnapshot` — leaving helipads out of it was a bug that would have surfaced two sessions
+  later as a pad and a stand sharing an id.
 - Entity ids come from `Airport.nextEntityId`, not a module-level counter, so a game's ids are
   deterministic and survive a save/load round trip.
 
@@ -437,17 +539,25 @@ two-tap "Start over" to wipe it.
 7, 8, 9, 10, 12, 13, 14, 16; a fifty-day campaign with an ending; roads; passengers; terminal
 retail. `Terrain` gained `woods` and the meadow grew to 24x42 to hold it all.
 
-Seventeen classes now, including three military ones on a dedicated strip.
+Nineteen classes now: three military ones on a dedicated strip, and two rotorcraft on helipads.
+
+Since then: reputation removed in favour of a fixed schedule path, helipads, pooled terminal
+capacity, and the sectioned build menu. On seed 42 the auto-player now clears fifty days losing
+42 aeroplanes of 499 — a 92% service level, no crashes at any point.
 
 Remaining: **levels 2+** actually using water, rock and woods (only `LEVEL_MEADOW` exists, and
 it is all grass), and a further balancing pass. Two known rough edges:
 
-- The late campaign **runs away**: the auto-player finishes day 50 on several hundred thousand
-  pounds with nothing left to buy. An economic sink (upkeep, staffing) is the obvious lever
-  and is not built.
-- Reputation **oscillates** through the last fifteen days, and because the soft schedule gate
-  scales heavy traffic by reputation, a dip collapses the day back to club trainers and the
-  takings with it. Survivable, but it makes the end of the campaign lumpy.
+- The late campaign **runs away**: the auto-player finishes day 50 on well over a million pounds
+  with nothing left to buy. An economic sink (upkeep, staffing) is the obvious lever and is not
+  built. Removing reputation made this more urgent, not less — a diverted aircraft now costs
+  only its forgone fare, so opportunity cost is the *only* brake in the game.
+- **Multiple control towers** are deliberately not built. Pooling movement and stack capacity
+  the way terminals now pool passengers would be a small change — `facilityOf()` and one
+  `'already-built'` branch — but the harness records **zero crashes across all fifty days**, and
+  a crash is the only thing stack overflow causes. The tower is not a binding constraint
+  anywhere in the campaign, so uncapping it buys nothing but a balance problem. Build it if and
+  when a harness run starts showing crashes or unmanaged holding aircraft.
 
 `npm run day` plays the **whole fifty-day campaign against an auto-player** and prints each
 debrief: landed/diverted/crashed with reasons, passengers handled and turned away, how long
@@ -457,7 +567,14 @@ change in the output is a change in the game rather than noise.
 It builds as it goes — reactively, from the forecast, in the obvious order — because the
 question that matters over fifty days is not "what does the traffic look like" but **"can the
 player afford the next rung when the traffic demands it"**. A wall shows up as a run of
-diversions it never spends its way out of; a death spiral shows up as `Licence revoked`.
+diversions it never spends its way out of; a broken run shows up as `Bankrupt on day N`.
+
+Reading its output is how the phases above were decided, and it is worth knowing that **the
+harness can lie about the game**. Its apron policy once wanted `ceil(arrivals / 2)` stands
+capped at `STAND_ROWS.length`, silently ignoring the second stand column its own layout
+defines — seven stands for the entire late campaign. That, and not the map, was two thirds of
+every loss it reported, and it read exactly like a genuine spatial constraint. Before concluding
+that the *game* is short of something, check that the auto-player is not short of it first.
 
 Its layout is load-bearing and was got wrong twice, both times silently:
 
@@ -480,11 +597,6 @@ Two metrics to watch:
   strip clears roughly five a day. `arrivalsForDay()` is tied to that and caps at fifteen.
   Traffic past what the map can physically absorb is not difficulty, it is arithmetic.
 
-Reputation gates heavy traffic **softly** — it thins the weights rather than hiding classes.
-A hard gate produced a vicious oscillation: a good day crossed a threshold, a fleet the
-airport had never seen arrived and all diverted, reputation collapsed, and they vanished
-again. Worse, a class below its threshold never appeared in the forecast either, so the game
-punished the player for something it had refused to warn them about.
 
 `sim/advice.ts` produces the planning-phase warnings. It exists because the debrief only
 explains aeroplanes that were *lost*; advice covers the other failure mode, money spent on

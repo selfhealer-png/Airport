@@ -13,10 +13,15 @@ It runs as an installable PWA, portrait, built for phones. Runways therefore run
 
 ## Playing
 
-Fifty days, from a mown grass strip to a jet-capable airport. Seventeen aircraft classes
+Fifty days, from a mown grass strip to a jet-capable airport. Nineteen aircraft classes
 across a runway ladder that steps 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14 and 16 tiles, so almost
 every extension unlocks something new. Military traffic needs a strip of its own that no
-airliner can use.
+airliner can use, and helicopters need no runway at all — a helipad is a runway and a stand in
+one tile, which makes the late campaign a question of where things go rather than how long the
+tarmac is.
+
+What arrives is fixed by the day and the seed, so tomorrow is knowable today: you are being
+tested on your airport, never on your luck.
 
 Between days you build; during a day you watch. The debrief afterwards tells you *why* each
 aeroplane was lost, which is the only feedback the game gives — so it is written as carefully

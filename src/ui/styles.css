@@ -250,19 +250,54 @@ body {
  * One horizontally scrolling row of chips. `touch-action: pan-x` re-enables the browser's
  * own horizontal scrolling here, which the global `none` would otherwise kill.
  */
+/*
+ * The build menu: labelled sections stacked vertically, each a wrapping grid.
+ *
+ * It replaced a single horizontally-scrolling row of every chip in the game. That row was
+ * fine at four chips and unusable at sixteen — the only cue that "fire station" existed was
+ * a scrollbar that phones do not draw. Height is the cost, and `onToolArmed` collapsing the
+ * drawer is what pays it: the menu is only ever on screen while you are choosing.
+ */
+.chip-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 var(--gutter-right) 0 var(--gutter-left);
+}
+
+.chip-section-title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+/*
+ * `auto-fill` with a minimum rather than a fixed two columns: a wide phone in landscape, or
+ * a desktop window, fits three or four and there is no reason to leave the space empty.
+ * `minmax(0, 1fr)` because a grid track's automatic minimum is its content's min-content
+ * width, and a long chip label would otherwise push the whole drawer — and the canvas beside
+ * it — past the viewport.
+ */
+.chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
+  gap: 8px;
+}
+
+/* Upgrades wrap rather than scroll: there is one button per built tower and terminal, and
+   with pooled terminal capacity that number is no longer bounded at two. */
 .chip-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
   max-width: 100%;
-  overflow-x: auto;
   padding: 0 var(--gutter-right) 0 var(--gutter-left);
-  scrollbar-width: none;
-  touch-action: pan-x;
-}
-
-.chip-row::-webkit-scrollbar {
-  display: none;
 }
 
 .upgrade-row:not(:empty) {
@@ -290,6 +325,19 @@ body {
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* In the grid a chip is stretched to its track rather than sized to its text, so a long
+   label has to be allowed to truncate instead of widening the column. */
+.chip-grid .chip {
+  flex: initial;
+  min-width: 0;
+}
+
+.chip-grid .chip-label,
+.chip-grid .chip-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chip-hint {

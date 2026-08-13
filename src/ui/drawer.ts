@@ -19,9 +19,12 @@ import type { Tool } from './placement';
 /**
  * The bottom-sheet build drawer.
  *
- * Portrait phones have very little room, so this is one scrolling row of chips rather than a
- * nested menu: every buildable thing is one tap away, and the selected chip stays lit while
- * the player drags on the map above.
+ * This used to be one horizontally-scrolling row of every buildable thing. It was one tap
+ * away from anywhere in principle and a many-swipe hunt in practice — by day 20 there were
+ * sixteen chips in that row and "fire station" was somewhere off the right-hand edge, with
+ * nothing on screen to say so. Grouping them into labelled sections in a wrapping grid trades
+ * a taller drawer for a menu you can read, and the drawer now closes itself the moment a tool
+ * is armed, so the height costs nothing while you are actually building.
  */
 
 interface ToolChip {
@@ -31,7 +34,42 @@ interface ToolChip {
   readonly tool: Tool;
 }
 
+interface ChipSection {
+  readonly title: string;
+  readonly chips: ToolChip[];
+}
+
+/**
+ * Every buildable thing, grouped the way a player thinks about them rather than the way the
+ * `Tool` union happens to be ordered.
+ *
+ * Purely a rendering concern: `Tool`, `BuildCheck` and `minimumCost()` know nothing about
+ * sections, and `chips()` below flattens this back into the flat list everything else wants.
+ */
+function chipSections(): ChipSection[] {
+  const all = allChips();
+  const pick = (...ids: string[]): ToolChip[] =>
+    ids.map((id) => all.find((c) => c.id === id)).filter((c): c is ToolChip => c !== undefined);
+
+  return [
+    { title: 'Runways', chips: pick('runway-grass', 'runway-gravel', 'runway-asphalt', 'runway-military') },
+    { title: 'Taxiways & roads', chips: pick('taxiway', 'road') },
+    { title: 'Stands', chips: pick('stand-small', 'stand-medium', 'stand-large') },
+    // Its own section rather than bolted onto Stands: a pad is not sized the way stands are,
+    // and it is a runway as much as it is a stand.
+    { title: 'Helipads', chips: pick('helipad') },
+    { title: 'Towers & terminals', chips: pick('tower', 'terminal') },
+    { title: 'Support', chips: pick('fuel-farm', 'fire-station', 'shop') },
+    { title: 'Demolish', chips: pick('demolish') },
+  ];
+}
+
+/** The flat list, for every lookup that does not care how the drawer is laid out. */
 function chips(): ToolChip[] {
+  return chipSections().flatMap((section) => section.chips);
+}
+
+function allChips(): ToolChip[] {
   return [
     {
       id: 'runway-grass',
@@ -152,6 +190,15 @@ export interface DrawerHandlers {
    * upgrades. Lets the caller record an undo point for a change it did not initiate.
    */
   onBeforeChange?: () => void;
+  /**
+   * Called when the player arms a build tool, so the shell can collapse to a full-size map.
+   *
+   * Not called on deselection — putting a tool down should not move anything — and not called
+   * for demolish. Every other tool arming into a full field is covered by undo; demolish is
+   * the one combination where a stray drag on a map that has just grown under the player's
+   * thumb takes a whole runway out before they have noticed the drawer went away.
+   */
+  onToolArmed?: () => void;
 }
 
 export function createDrawer(
@@ -163,7 +210,7 @@ export function createDrawer(
   status.className = 'drawer-status';
 
   const row = document.createElement('div');
-  row.className = 'chip-row';
+  row.className = 'chip-sections';
 
   const upgrades = document.createElement('div');
   upgrades.className = 'chip-row upgrade-row';
@@ -228,7 +275,7 @@ export function createDrawer(
   const defaultStatus = 'Pick something to build, then drag on the field.';
   status.textContent = defaultStatus;
 
-  for (const chip of chips()) {
+  function makeChip(chip: ToolChip): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'chip';
@@ -245,10 +292,29 @@ export function createDrawer(
       selectedId = chip.id;
       paintSelection();
       status.textContent = `${chip.label} — ${chip.hint}`;
+      if (chip.tool.kind !== 'demolish') handlers.onToolArmed?.();
     });
 
     buttons.set(chip.id, button);
-    row.append(button);
+    return button;
+  }
+
+  for (const section of chipSections()) {
+    if (section.chips.length === 0) continue;
+
+    const group = document.createElement('div');
+    group.className = 'chip-section';
+
+    const title = document.createElement('p');
+    title.className = 'chip-section-title';
+    title.textContent = section.title;
+
+    const grid = document.createElement('div');
+    grid.className = 'chip-grid';
+    grid.append(...section.chips.map(makeChip));
+
+    group.append(title, grid);
+    row.append(group);
   }
 
   /** Today's inbound traffic, with anything the airport cannot take called out. */

@@ -701,21 +701,21 @@ const HELIPAD: SpriteSource = [
  */
 const PLANE_HELICOPTER: SpriteSource = [
   '................',
-  '.kkkkkkkkkkkkkk.',
-  '..iiiiiiiiiiii..',
   '.......kk.......',
   '......kbbk......',
   '.....kbQQbk.....',
-  '....kbQQQQbk....',
-  '....kbbbbbbk....',
-  '....kbbbbbbk....',
+  '.....kbQQbk.....',
+  '.iiiikbbbbkiiii.',
+  'iiiiiibbbbiiiiii',
+  '.iiiikbbbbkiiii.',
   '.....kbbbbk.....',
   '......kbbk......',
   '......kbbk......',
+  '......kbbk......',
   '.....kkbbkk.....',
-  '....kiikkiik....',
-  '......kkkk......',
-  '................',
+  '....kikbbkik....',
+  '.....kkbbkk.....',
+  '.......kk.......',
 ];
 
 export const SPRITES = {
