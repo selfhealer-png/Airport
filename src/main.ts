@@ -31,6 +31,27 @@ function reportFatal(error: unknown): void {
 window.addEventListener('error', (event) => reportFatal(event.error ?? event.message));
 window.addEventListener('unhandledrejection', (event) => reportFatal(event.reason));
 
+/**
+ * Picks up a new version on the first launch after a deploy rather than the second.
+ *
+ * The service worker claims the page as soon as it activates, but nothing was reloading — so
+ * a launch would install the new build and carry on showing the old one, and only the launch
+ * after that looked any different. On a phone, where the app is opened and dismissed rather
+ * than refreshed, that reads as the update simply not having worked.
+ *
+ * Guarded on there already being a controller, because `clientsClaim` also fires this the
+ * very first time the worker takes over a page that had none — reloading then would be a
+ * pointless flash on a player's first ever visit.
+ */
+if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+}
+
 /** Real seconds a single frame may contribute, so a backgrounded tab cannot fast-forward a day. */
 const MAX_FRAME_SECONDS = 0.25;
 

@@ -254,6 +254,21 @@ Two things the collapsed state depends on:
   `.drawer-status`, which is inside the hidden panel — so with the drawer shut, the player was
   dragging out a runway with no idea what it cost until the money had gone.
 
+### Updating an installed copy
+
+The service worker is `registerType: 'autoUpdate'`, so it uses `skipWaiting` and
+`clientsClaim` and takes over the moment it activates. But `registerSW.js` only *registers*
+it — nothing reloads — so a launch would install the new build and carry on showing the old
+one, and only the launch after that looked different. On a phone, where the app is opened and
+dismissed rather than refreshed, that reads as the update not having worked at all.
+
+`main.ts` therefore reloads on `controllerchange`, guarded on a controller already existing:
+`clientsClaim` fires the same event the first time a worker claims a page that had none, and
+reloading then is a pointless flash on a player's first visit.
+
+iOS still needs the app **fully dismissed from the app switcher**, not merely backgrounded — a
+resumed process never navigates, so nothing checks for a new worker.
+
 ### Saving
 
 `save/snapshot.ts` is pure: `toSnapshot` / `fromSnapshot` convert a `GameState` to plain JSON
