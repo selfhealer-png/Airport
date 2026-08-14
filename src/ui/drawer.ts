@@ -1,4 +1,9 @@
-import { TERMINAL_LEVELS, TOWER_LEVELS } from '@/content/buildings';
+import {
+  certificationLevel,
+  CERTIFICATION_LEVELS,
+  TERMINAL_LEVELS,
+  TOWER_LEVELS,
+} from '@/content/buildings';
 import {
   FACILITY_COST,
   HELIPAD_COST,
@@ -10,7 +15,18 @@ import {
   STAND_COST,
   TAXIWAY_COST_PER_TILE,
 } from '@/content/costs';
-import { checkUpgradeFacility, explainBuildError, facilityCost, isAffordableQuote, applyUpgradeFacility, runwayCost } from '@/sim/build';
+import {
+  applyCertify,
+  applySurrenderCertification,
+  applyUpgradeFacility,
+  checkCertify,
+  checkSurrenderCertification,
+  checkUpgradeFacility,
+  explainBuildError,
+  facilityCost,
+  isAffordableQuote,
+  runwayCost,
+} from '@/sim/build';
 import { facilityOf } from '@/sim/airport';
 import { airportAdvice, tomorrowsTraffic } from '@/sim/advice';
 import type { GameState } from '@/sim/types';
@@ -403,7 +419,63 @@ export function createDrawer(
       items.push(button);
     }
 
+    items.push(...certificationButtons(current));
     upgrades.replaceChildren(...items);
+  }
+
+  /*
+   * Certification is the one upgrade with no purchase price and a standing daily fee, so it
+   * gets both a way up and a way back down. Surrendering is what stops a category the player
+   * cannot fill from becoming a slow bleed they can do nothing about.
+   */
+  function certificationButtons(current: GameState): HTMLElement[] {
+    const held = certificationLevel(current.airport.certification);
+    const out: HTMLElement[] = [];
+
+    const up = checkCertify(current);
+    if (isAffordableQuote(up)) {
+      const next = certificationLevel(current.airport.certification + 1);
+      out.push(
+        makeUpgradeButton(
+          `Licence → ${next.name}`,
+          `£${next.dailyCost.toLocaleString()}/day`,
+          () => {
+            const fresh = checkCertify(current);
+            if (!isAffordableQuote(fresh)) return;
+            handlers.onBeforeChange?.();
+            applyCertify(current, fresh);
+            api.refresh(current);
+            api.setStatus(`Licensed to ${certificationLevel(current.airport.certification).name}.`);
+          },
+        ),
+      );
+    }
+
+    if (isAffordableQuote(checkSurrenderCertification(current))) {
+      out.push(
+        makeUpgradeButton(`Give up ${held.name}`, `saves £${held.dailyCost.toLocaleString()}/day`, () => {
+          const fresh = checkSurrenderCertification(current);
+          if (!isAffordableQuote(fresh)) return;
+          handlers.onBeforeChange?.();
+          applySurrenderCertification(current, fresh);
+          api.refresh(current);
+          api.setStatus(`Now licensed to ${certificationLevel(current.airport.certification).name}.`);
+        }),
+      );
+    }
+
+    return out;
+  }
+
+  function makeUpgradeButton(label: string, hint: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'chip chip-upgrade';
+    button.innerHTML = `<span class="chip-label"></span><span class="chip-hint"></span>`;
+    button.querySelector('.chip-label')!.textContent = label;
+    button.querySelector('.chip-hint')!.textContent = hint;
+    button.addEventListener('click', onClick);
+    return button;
   }
 
   api.refresh(state);

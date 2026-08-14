@@ -90,6 +90,85 @@ export function passengerRevenue(fareMultiplier: number, shops: number): number 
   return (PASSENGER_FARE + shops * SHOP_REVENUE_PER_PASSENGER) * fareMultiplier;
 }
 
+/*
+ * --- Running costs -----------------------------------------------------------------------
+ *
+ * Everything above this line is capital: you pay once and own it. These are the two costs
+ * that recur, and they exist because without them the campaign runs away — the auto-player
+ * used to finish day 50 having spent 22% of everything it ever earned, sitting on the rest
+ * with nothing left to buy.
+ *
+ * Both are deliberately priced off things that scale the way income scales. Daily profit
+ * grows about 150x between day 5 and day 50, so a flat charge is either fatal in the first
+ * week or invisible in the last one. Handling is a fraction of what the flight is worth;
+ * certification steps with the size of aeroplane you elect to accept.
+ */
+
+/**
+ * Ground handling — crew, steps, tug, baggage — as a fraction of what the flight earns.
+ *
+ * A **proportion**, not a per-passenger or per-movement rate, and that is the whole of the
+ * design. Daily profit grows about 150x across the campaign while headcount and turnaround
+ * times grow perhaps 5x, so any charge priced per unit of *activity* is savagely regressive:
+ * a flat £3 a passenger was 33% of passenger revenue on day 8, when a head is worth £8, and
+ * 9% on day 50, when four shops and a level-4 terminal make the same head worth £32. It
+ * bankrupted the early campaign and went unnoticed in the late one.
+ *
+ * Priced off the takings instead, the squeeze is the same at every stage and cannot spiral:
+ * a bad day earns less and therefore costs less, and a diverted aeroplane — which nobody
+ * handled — costs nothing at all.
+ */
+export const HANDLING_FEE_FRACTION = 0.08;
+
+/** What it costs to handle one arrival, given what that arrival brought in. */
+export function handlingCost(takings: number): number {
+  return Math.round(takings * HANDLING_FEE_FRACTION);
+}
+
+export interface CertificationLevel {
+  readonly level: number;
+  readonly name: string;
+  /**
+   * The longest runway requirement this licence covers, which is how a class is graded.
+   * Rotorcraft need no runway at all and are covered by every category including the free one.
+   */
+  readonly maxRunwayLength: number;
+  readonly dailyCost: number;
+}
+
+/**
+ * Aerodrome certification: what size of aeroplane you are *licensed* to accept, charged daily
+ * whether one turns up or not.
+ *
+ * This is the only thing in the game that asks "should I chase this class at all?". Runway
+ * length, stands and terminals all make bigger strictly better once you can afford them; a
+ * standing fee against the category you hold means a well-run regional airport is a real
+ * alternative to a stretched international one, rather than just a slower way to become one.
+ *
+ * Steps are placed where the ladder steps: category B is the commuters and regionals, C the
+ * narrowbody jets and the freighter, D the widebodies. Each is priced at roughly a tenth of
+ * daily income at the point the traffic that needs it first appears — dear enough to be a
+ * decision, not so dear that holding it is a mistake.
+ */
+export const CERTIFICATION_LEVELS: readonly CertificationLevel[] = [
+  { level: 0, name: 'Category A', maxRunwayLength: 5, dailyCost: 0 },
+  { level: 1, name: 'Category B', maxRunwayLength: 9, dailyCost: 60 },
+  { level: 2, name: 'Category C', maxRunwayLength: 13, dailyCost: 2_500 },
+  // 99 rather than 16: the top category means "anything", so adding a longer class later is a
+  // balance change and not a licence the player can never hold.
+  { level: 3, name: 'Category D', maxRunwayLength: 99, dailyCost: 30_000 },
+];
+
+export function certificationLevel(level: number): CertificationLevel {
+  return CERTIFICATION_LEVELS[Math.min(Math.max(level, 0), CERTIFICATION_LEVELS.length - 1)]!;
+}
+
+/** The cheapest category that covers an aircraft needing `runwayLength` tiles. */
+export function requiredCertification(runwayLength: number): number {
+  const found = CERTIFICATION_LEVELS.find((c) => runwayLength <= c.maxRunwayLength);
+  return found?.level ?? CERTIFICATION_LEVELS.length - 1;
+}
+
 /** Cash penalty for a crash, on top of the lost fare. */
 export const CRASH_COST = 2_500;
 

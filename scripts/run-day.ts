@@ -1,5 +1,12 @@
 import { aircraftClass, isRotorcraft } from '@/content/aircraft';
-import { terminalLevel, TERMINAL_LEVELS, towerLevel, TOWER_LEVELS } from '@/content/buildings';
+import {
+  certificationLevel,
+  requiredCertification,
+  terminalLevel,
+  TERMINAL_LEVELS,
+  towerLevel,
+  TOWER_LEVELS,
+} from '@/content/buildings';
 import { LEVEL_MEADOW } from '@/content/levels';
 import { arrivalsForDay, CAMPAIGN_DAYS, generateSchedule } from '@/content/schedule';
 import {
@@ -10,7 +17,9 @@ import {
 } from '@/sim/airport';
 import { buildServices } from '@/sim/connectivity';
 import { tomorrowsTraffic } from '@/sim/advice';
+import { structuralBlock } from '@/sim/assignment';
 import {
+  applyCertify,
   applyDemolish,
   applyExtendRunway,
   applyFacility,
@@ -21,6 +30,7 @@ import {
   applyStand,
   applyTaxiwayRun,
   applyUpgradeFacility,
+  checkCertify,
   checkDemolish,
   checkExtendRunway,
   checkFacility,
@@ -329,6 +339,27 @@ function plan(state: GameState): void {
     0,
   );
 
+  /*
+   * Licence first, but *only* for traffic the airport could otherwise take today.
+   *
+   * Certification is a standing daily charge, so holding a category you cannot fill is a slow
+   * bleed against nothing. Buying it off runway length alone was exactly that mistake: the
+   * auto-player took Category C the day it laid a ten-tile strip, then could not afford the
+   * fuel farm the same traffic needed, and spent the rest of the campaign diverting jets it
+   * was paying £1,200 a day to be allowed to accept.
+   *
+   * `structuralBlock` returning exactly `not-certified` is the precise test — every more
+   * fundamental gap is checked before it, so that answer means "the licence is the only thing
+   * standing in the way". A sensible player follows the same rule.
+   */
+  const services = buildServices(state.airport);
+  const blockedOnLicence = generateSchedule(state.day, state.seed).some(
+    (a) => structuralBlock(state.airport, services, a.classId) === 'not-certified',
+  );
+  if (blockedOnLicence) {
+    tryBuild(checkCertify(state), (q) => applyCertify(state, q));
+  }
+
   // Capability first: everything below is worthless while an aeroplane is being turned away
   // for something the airport simply does not have.
   for (const entry of tomorrowsTraffic(state).filter((e) => e.problem)) {
@@ -527,14 +558,17 @@ for (let day = 1; day <= days; day++) {
   console.log(`Day ${day}  [${state.airport.runways.length}rwy ${length}t ${runway?.surface ?? '-'}, ` +
     `${state.airport.stands.length} stands, ` +
     `${state.airport.helipads.length} pads, ` +
+    `${certificationLevel(state.airport.certification).name.replace('Category ', 'cat')}, ` +
     `T${terminalsOf(state.airport).map((t) => t.level).join('+') || 0}/` +
     `C${facilityOf(state.airport, 'tower')?.level ?? 0}]`);
   console.log(summarise(result));
+  const running = result.handlingCost + result.certificationCost;
   const served = state.scheduledTotal === 0
     ? 0
     : Math.round((state.landedTotal / state.scheduledTotal) * 100);
   console.log(
     `  cash £${cashBefore.toLocaleString()} → £${state.cash.toLocaleString()}` +
+      `   running −£${running.toLocaleString()}` +
       `   campaign ${state.landedTotal}/${state.scheduledTotal} (${served}%)`,
   );
   console.log('');

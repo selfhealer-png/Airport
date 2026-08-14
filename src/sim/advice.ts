@@ -1,5 +1,12 @@
 import { aircraftClass, isRotorcraft } from '@/content/aircraft';
-import { TERMINAL_LEVELS, terminalLevel, towerLevel } from '@/content/buildings';
+import {
+  certificationLevel,
+  CERTIFICATION_LEVELS,
+  requiredCertification,
+  TERMINAL_LEVELS,
+  terminalLevel,
+  towerLevel,
+} from '@/content/buildings';
 import { arrivalsForDay, generateSchedule } from '@/content/schedule';
 import { terminalsOf, workingTerminalCapacity, workingTowerLevel } from './airport';
 import { structuralBlock } from './assignment';
@@ -160,6 +167,52 @@ function rotorAdvice(state: GameState): Advice[] {
   return advice;
 }
 
+/**
+ * The aerodrome licence, which is the only thing in the game that costs money every day
+ * whether it earns anything or not.
+ *
+ * Both directions matter and neither is visible from the map. Traffic booked in above your
+ * category is turned away with nothing on the field to explain why; a category above anything
+ * that is booked is a standing charge against nothing at all.
+ */
+function certificationAdvice(state: GameState): Advice[] {
+  const advice: Advice[] = [];
+  const held = state.airport.certification;
+  const schedule = generateSchedule(state.day, state.seed);
+  if (schedule.length === 0) return advice;
+
+  const needed = Math.max(
+    ...schedule.map((a) => requiredCertification(aircraftClass(a.classId).runwayLength)),
+  );
+
+  if (needed > held) {
+    const blocked = schedule.filter(
+      (a) => requiredCertification(aircraftClass(a.classId).runwayLength) > held,
+    ).length;
+    const next = certificationLevel(held + 1);
+    advice.push({
+      tone: 'warn',
+      text:
+        `${blocked} booked movement${blocked === 1 ? '' : 's'} need a licence you do not hold. ` +
+        `${next.name} costs £${next.dailyCost.toLocaleString()} a day, every day — so it is ` +
+        'worth holding only once the runways and stands to use it are there.',
+    });
+  }
+
+  // Only worth saying when it is actually costing something: category A is free.
+  if (held > needed && certificationLevel(held).dailyCost > 0) {
+    advice.push({
+      tone: 'info',
+      text:
+        `Nothing booked today needs ${certificationLevel(held).name}, and it is costing ` +
+        `£${certificationLevel(held).dailyCost.toLocaleString()} a day. You can give it up and ` +
+        'take it back later.',
+    });
+  }
+
+  return advice;
+}
+
 /** Whether the terminals can cope with what is booked in, and whether retail is paying. */
 function terminalAdvice(state: GameState, services: Services): Advice[] {
   const advice: Advice[] = [];
@@ -282,6 +335,7 @@ export function airportAdvice(state: GameState): Advice[] {
 
   advice.push(...militaryAdvice(state));
   advice.push(...rotorAdvice(state));
+  advice.push(...certificationAdvice(state));
   advice.push(...terminalAdvice(state, services));
 
   // Largest stand caps the biggest aircraft the airport can accept at all.

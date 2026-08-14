@@ -504,6 +504,13 @@ body {
  * The service level: how much of the traffic the airport actually took, today and so far.
  * Set quietly under the money, because unlike the money it is a measure rather than a reward.
  */
+.debrief-costs:not(:empty) {
+  margin: -2px 0 10px;
+  font-size: 12px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
 .debrief-service {
   display: flex;
   flex-direction: column;

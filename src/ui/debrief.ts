@@ -45,6 +45,11 @@ export interface DebriefResult {
   readonly crashed: number;
   /** Aeroplanes booked in today, landed or not. The denominator of the service level. */
   readonly scheduled: number;
+  /** What the day's flying earned, before running costs. */
+  readonly takings: number;
+  /** Ground handling plus the certification fee. */
+  readonly operating: number;
+  /** Takings less operating costs — what actually reached the bank. */
   readonly cash: number;
   readonly passengers: number;
   readonly passengersTurnedAway: number;
@@ -54,7 +59,7 @@ export function summariseDay(day: DayState): DebriefResult {
   let landed = 0;
   let diverted = 0;
   let crashed = 0;
-  let cash = 0;
+  let takings = 0;
   let passengers = 0;
   let passengersTurnedAway = 0;
 
@@ -62,17 +67,21 @@ export function summariseDay(day: DayState): DebriefResult {
     if (event.outcome === 'landed') landed += 1;
     if (event.outcome === 'diverted') diverted += 1;
     if (event.outcome === 'crashed') crashed += 1;
-    cash += event.cash;
+    takings += event.cash;
     passengers += event.passengers;
     passengersTurnedAway += event.passengersTurnedAway;
   }
+
+  const operating = day.handlingCost + day.certificationCost;
 
   return {
     landed,
     diverted,
     crashed,
     scheduled: day.schedule.length,
-    cash,
+    takings,
+    operating,
+    cash: takings - operating,
     passengers,
     passengersTurnedAway,
   };
@@ -149,6 +158,24 @@ export function showDebrief(
   money.className = 'debrief-money';
   money.textContent = `${result.cash >= 0 ? '+' : '−'}£${Math.abs(result.cash).toLocaleString()}`;
 
+  /*
+   * Running costs are shown as their own line, never netted silently into the figure above.
+   *
+   * Handling and certification are the only charges in the game that recur, so they are the
+   * only ones a player has to plan around rather than simply decide on — and a cost you
+   * cannot see is one you cannot plan around. It looks like a smaller fare otherwise.
+   */
+  const costs = document.createElement('p');
+  costs.className = 'debrief-costs';
+  if (result.operating > 0) {
+    costs.textContent =
+      `took £${result.takings.toLocaleString()}  ·  ` +
+      `handling £${day.handlingCost.toLocaleString()}` +
+      (day.certificationCost > 0
+        ? `  ·  licence £${day.certificationCost.toLocaleString()}`
+        : '');
+  }
+
   const service = document.createElement('p');
   service.className = 'debrief-service';
   for (const [index, line] of serviceLevel(day, campaign).entries()) {
@@ -210,9 +237,9 @@ export function showDebrief(
     closing.textContent =
       'Fifty days from a grass field to this. The schedule holds at its heaviest from ' +
       'here, so the airport is yours to keep growing.';
-    panel.append(heading, tally, money, service, people, closing, reasons, button);
+    panel.append(heading, tally, money, costs, service, people, closing, reasons, button);
   } else {
-    panel.append(heading, tally, money, service, people, reasons, button);
+    panel.append(heading, tally, money, costs, service, people, reasons, button);
   }
   root.replaceChildren(panel);
   root.hidden = false;

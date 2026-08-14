@@ -253,6 +253,47 @@ terminal**, and are capped by the summed `TerminalLevel.shopSlots`. `checkFacili
 letting it be built and quietly earn nothing — £3,500 is too much to lose to something the
 game could simply have declined.
 
+### Running costs, and why their *shape* matters more than their size
+
+Two costs recur; everything else in the game is capital you pay for once and own. They exist
+because without them the campaign ran away — the auto-player finished day 50 having spent 22%
+of everything it ever earned and sat on the other 78% with nothing left to buy.
+
+- **Ground handling** (`HANDLING_FEE_FRACTION`) is a flat proportion of what a flight actually
+  took, charged in `land()`.
+- **Aerodrome certification** (`CERTIFICATION_LEVELS`) is a standing daily fee for the size of
+  aeroplane you are licensed to accept, charged once in `closeDay()` whether anything flew.
+
+**The economy is a compounding growth process, and that governs everything about how a cost
+here has to be priced.** Daily profit grows about 150x between day 5 and day 50 because income
+is reinvested into capacity that earns more income. A drag applied during the growth phase
+therefore does not produce a proportionally smaller endgame — it stalls the engine. Measured:
+a 15% handling charge took fifty-day gross takings from £1.75M to **£20k**, because the airport
+never accumulated enough to pave a runway and never escaped its first plateau.
+
+Three rules follow, and each was learned by breaking the campaign:
+
+- **Price recurring costs off revenue, never off activity.** A flat £3 per passenger was 33% of
+  passenger revenue on day 8, when a head is worth £8, and 9% on day 50, when a level-4
+  terminal and four shops make the same head worth £32. Per-movement and per-tile charges are
+  regressive here for the same reason: headcount, turnaround seconds and tile counts all grow
+  perhaps 5x across a campaign in which money grows 150x.
+- **Charge on what was earned, not on what was scheduled.** Handling is charged only on
+  aeroplanes that actually landed, so a bad day costs less. That is what stops a running cost
+  becoming the death spiral reputation used to be.
+- **A standing fee needs an escape hatch.** Certification is opt-in, and
+  `checkSurrenderCertification` gives it back. An airport that overreached can always stop
+  paying for a category it cannot fill.
+
+Certification is checked in `structuralBlock()` **after** runway length and surface, which is
+deliberate: the player should be told to build the strip first and buy the licence last, when
+they can actually use it, rather than paying rent on a category they have nowhere to put.
+
+It is also the only mechanic that asks *should I chase this class at all?* Runway length,
+stands and terminals all make bigger strictly better once affordable; a daily fee against the
+category held makes a well-run regional airport a real alternative to a stretched
+international one.
+
 ### Building
 
 `src/sim/build.ts` exposes every operation as a **`check…` / `apply…` pair**. `check` returns
@@ -479,7 +520,7 @@ currently the only thing that needs it.
 - **TypeScript 7** (the native compiler). `baseUrl` was removed; `paths` entries must be
   relative (`"./src/*"`).
 - Balance numbers belong in `src/content/`, never inlined into `sim/` logic.
-- **A save stores roads, runway use and helipads, and is version 6.** Bump `SNAPSHOT_VERSION`
+- **A save stores roads, runway use, helipads and the aerodrome licence, and is version 7.** Bump `SNAPSHOT_VERSION`
   whenever the shape changes; old saves are then rejected and a fresh game starts, which is the
   intended migration story. Anything with an id must also join the `nextEntityId` scan in
   `fromSnapshot` — leaving helipads out of it was a bug that would have surfaced two sessions
@@ -548,10 +589,17 @@ capacity, and the sectioned build menu. On seed 42 the auto-player now clears fi
 Remaining: **levels 2+** actually using water, rock and woods (only `LEVEL_MEADOW` exists, and
 it is all grass), and a further balancing pass. Two known rough edges:
 
-- The late campaign **runs away**: the auto-player finishes day 50 on well over a million pounds
-  with nothing left to buy. An economic sink (upkeep, staffing) is the obvious lever and is not
-  built. Removing reputation made this more urgent, not less — a diverted aircraft now costs
-  only its forgone fare, so opportunity cost is the *only* brake in the game.
+- The late campaign still **runs away, though less far**. Handling and certification take
+  about 28% of gross and roughly halve the closing balance (£1.37M → £850k on seed 42), with
+  no cost to the service level. Getting the surplus to zero would need running costs near 70%
+  of revenue, which is repricing the game rather than trimming it — the other half of the
+  problem is that the **upgrade ladder ends around day 40**, so there is genuinely nothing left
+  to buy. More to spend on is the missing half, not a bigger sink.
+- **The campaign is balanced against seed 42 alone, and is fragile on others.** Measured on the
+  fifty-day harness with running costs *disabled*: seed 42 and seed 7 clear at ~90%, seed 99 at
+  42%, seed 3 at **24%**. That is a pre-existing property of the economy and the auto-player,
+  not something the running costs introduced — but they do make a bad seed worse, so tuning
+  against a single seed hides real fragility.
 - **Multiple control towers** are deliberately not built. Pooling movement and stack capacity
   the way terminals now pool passengers would be a small change — `facilityOf()` and one
   `'already-built'` branch — but the harness records **zero crashes across all fifty days**, and
@@ -563,6 +611,13 @@ it is all grass), and a further balancing pass. Two known rough edges:
 debrief: landed/diverted/crashed with reasons, passengers handled and turned away, how long
 each day took, and what the airport looks like that day. Deterministic for a given seed, so a
 change in the output is a change in the game rather than noise.
+
+**Its results are chaotic under small balance changes, and that is a property of the tool, not
+noise.** The auto-player's purchases are step functions — it either affords a thing on a given
+day or it does not — so a small change to a constant flips one decision and cascades through
+the rest of the campaign. Observed while tuning: *lowering* the handling fraction from 0.08 to
+0.05 took seed 7 from 88% to 63%, and from 0.05 to 0.03 took seed 42 from 90% to 35%. Do not
+read a single run as a smooth signal, and do not tune to three significant figures against it.
 
 It builds as it goes — reactively, from the forecast, in the obvious order — because the
 question that matters over fifty days is not "what does the traffic look like" but **"can the

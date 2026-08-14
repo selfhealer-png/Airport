@@ -20,7 +20,7 @@ import type {
  * whole aircraft state machine.
  */
 
-export const SNAPSHOT_VERSION = 6;
+export const SNAPSHOT_VERSION = 7;
 
 export interface Snapshot {
   readonly version: number;
@@ -32,6 +32,8 @@ export interface Snapshot {
   readonly landedTotal: number;
   readonly scheduledTotal: number;
   readonly nextEntityId: number;
+  /** Index into `CERTIFICATION_LEVELS`. Progress, so it has to survive a reload. */
+  readonly certification: number;
   readonly runways: ReadonlyArray<{
     id: string;
     x: number;
@@ -78,6 +80,7 @@ export function toSnapshot(state: GameState): Snapshot {
     landedTotal: state.landedTotal,
     scheduledTotal: state.scheduledTotal,
     nextEntityId: airport.nextEntityId,
+    certification: airport.certification,
     // Reservations and crash closures are per-day and rebuilt by `startDay`, so they are
     // not part of a save.
     runways: airport.runways.map((r) => ({
@@ -184,6 +187,12 @@ export function fromSnapshot(raw: unknown): GameState | null {
       level: facility.level,
     });
   }
+
+  // Clamped rather than rejected: a category outside the table is a balance change, not a
+  // corrupt save, and dropping to the free one is the safe direction to be wrong in.
+  airport.certification = isFiniteNumber(data.certification)
+    ? Math.max(0, Math.floor(data.certification))
+    : 0;
 
   // Ids must never collide with anything already placed, even if the saved counter was wrong.
   const highest = [...airport.runways, ...airport.stands, ...airport.helipads, ...airport.facilities]

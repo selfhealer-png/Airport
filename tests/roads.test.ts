@@ -17,6 +17,7 @@ import { structuralBlock } from '@/sim/assignment';
 import { checkFacility } from '@/sim/build';
 import { airportAdvice } from '@/sim/advice';
 import type { GameState } from '@/sim/types';
+import { licensed } from './helpers';
 
 /**
  * Roads are the landside network: taxiways carry aeroplanes, roads carry everything else.
@@ -195,6 +196,7 @@ describe('military runways', () => {
       { id: 'f-fire', type: 'fire-station', x: 5, y: 21, level: 0 },
     );
     addRoadRun(state.airport, 5, 22, 7, 22);
+    licensed(state.airport);
     return state;
   }
 

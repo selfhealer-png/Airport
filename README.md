@@ -23,6 +23,12 @@ tarmac is.
 What arrives is fixed by the day and the seed, so tomorrow is knowable today: you are being
 tested on your airport, never on your luck.
 
+Two things cost money every day rather than once. Ground handling takes a slice of what each
+flight earns, so a bad day costs less than a good one. And an aerodrome licence — the size of
+aeroplane you are *cleared* to accept — is a standing daily fee whether one turns up or not,
+which makes "should I chase this aeroplane at all?" a real question. You can give a licence
+back if it stops paying for itself.
+
 Between days you build; during a day you watch. The debrief afterwards tells you *why* each
 aeroplane was lost, which is the only feedback the game gives — so it is written as carefully
 as the rules it describes.

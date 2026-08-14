@@ -1,5 +1,5 @@
 import { aircraftClass, isRotorcraft } from '@/content/aircraft';
-import { towerLevel } from '@/content/buildings';
+import { requiredCertification, towerLevel } from '@/content/buildings';
 import { hasWorkingFireStation, hasWorkingFuelFarm, workingTowerLevel } from './airport';
 import { helipadById, standById, type Services } from './connectivity';
 import {
@@ -73,6 +73,9 @@ export function structuralBlock(
   // it uses. Ordered most fundamental first like the rest of this function — no pad at all
   // before a pad nothing can drive to.
   if (isRotorcraft(classId)) {
+    // Category A covers rotorcraft, so this can only ever bite if a future heavy type is
+    // graded above it — but leaving it out would make that a silent balance bug.
+    if (airport.certification < requiredCertification(spec.runwayLength)) return 'not-certified';
     if (airport.helipads.length === 0) return 'no-helipad';
     if (!airport.helipads.some((pad) => services.roadServed.has(pad.id))) return 'no-road-helipad';
     return null;
@@ -94,6 +97,12 @@ export function structuralBlock(
     (r) => SURFACE_RANK[r.surface] >= SURFACE_RANK[spec.minSurface],
   );
   if (goodSurface.length === 0) return 'no-runway-surface';
+
+  // Checked *after* the strip is proven adequate, deliberately. Certification is a standing
+  // daily fee, so the player should be told to build the runway first and buy the licence
+  // last — when they can actually use it — rather than paying rent on a category they have
+  // nowhere to put.
+  if (airport.certification < requiredCertification(spec.runwayLength)) return 'not-certified';
 
   // Fire cover and maintenance reach a runway by road, not by taxiway. A strip nothing can
   // drive to cannot be opened, however long it is.

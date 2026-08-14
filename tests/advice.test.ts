@@ -23,6 +23,43 @@ function working(): GameState {
   return state;
 }
 
+describe('the aerodrome licence', () => {
+  /**
+   * Certification is the only cost in the game charged every day whether it earns anything or
+   * not, and neither of its failure modes is visible from the map: traffic turned away for a
+   * licence you do not hold, and a licence held against traffic that is not coming.
+   */
+  it('warns when booked traffic needs a category you do not hold', () => {
+    const state = working();
+    // Day 20 books regionals and feeders, all of which are graded above the free category.
+    state.day = 20;
+    expect(state.airport.certification).toBe(0);
+    expect(texts(state)).toMatch(/licence you do not hold/i);
+  });
+
+  it('says the licence is only worth holding once you can use it', () => {
+    const state = working();
+    state.day = 20;
+    // The warning has to carry the recurring cost, or a player reads it as a one-off price.
+    expect(texts(state)).toMatch(/a day, every day/i);
+  });
+
+  it('points out a category nothing booked today needs', () => {
+    const state = working();
+    // Day 1 is trainers and light singles: the free category covers everything.
+    state.day = 1;
+    state.airport.certification = 3;
+    expect(texts(state)).toMatch(/nothing booked today needs/i);
+    expect(texts(state)).toMatch(/give it up/i);
+  });
+
+  it('stays quiet about the free category, which costs nothing to hold', () => {
+    const state = working();
+    state.day = 1;
+    expect(texts(state)).not.toMatch(/nothing booked today needs/i);
+  });
+});
+
 describe('planning advice', () => {
   it('tells a brand new player to build a runway', () => {
     expect(texts(createGame(LEVEL_MEADOW, 1))).toMatch(/drag out a runway/i);

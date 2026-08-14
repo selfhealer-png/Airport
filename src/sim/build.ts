@@ -1,5 +1,6 @@
 import {
   ADDITIONAL_TERMINAL_COST_MULTIPLIER,
+  CERTIFICATION_LEVELS,
   terminalLevel,
   TERMINAL_LEVELS,
   TOWER_LEVELS,
@@ -573,6 +574,46 @@ export function applyUpgradeFacility(
   if (!facility) return;
   spend(state, quote);
   facility.level += 1;
+}
+
+// --- Certification -----------------------------------------------------------------------
+
+/**
+ * Takes the airport up one certification category.
+ *
+ * Unlike everything else in this file there is **no purchase price** — a licence costs a
+ * standing daily fee instead, so the check is only ever "is there a category above this one".
+ * The decision it creates is not "can I afford it today" but "will this pay for itself every
+ * day from now on", which is the first question of that shape the game asks.
+ */
+export function checkCertify(state: GameState): BuildCheck {
+  const next = state.airport.certification + 1;
+  if (next >= CERTIFICATION_LEVELS.length) return 'max-level';
+  return { cost: 0 };
+}
+
+export function applyCertify(state: GameState, quote: BuildQuote): void {
+  spend(state, quote);
+  if (state.airport.certification + 1 < CERTIFICATION_LEVELS.length) {
+    state.airport.certification += 1;
+  }
+}
+
+/**
+ * Surrenders a category, stopping the fee.
+ *
+ * The escape hatch, and the reason a standing charge cannot spiral the way reputation did: an
+ * airport that has overreached can always stop paying for a licence it is not filling. There
+ * is nothing to refund — you were renting it.
+ */
+export function checkSurrenderCertification(state: GameState): BuildCheck {
+  if (state.airport.certification <= 0) return 'nothing-there';
+  return { cost: 0 };
+}
+
+export function applySurrenderCertification(state: GameState, quote: BuildQuote): void {
+  spend(state, quote);
+  if (state.airport.certification > 0) state.airport.certification -= 1;
 }
 
 // --- Demolition --------------------------------------------------------------------------

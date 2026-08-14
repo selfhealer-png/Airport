@@ -3,7 +3,7 @@ import { LEVEL_MEADOW } from '@/content/levels';
 import { generateSchedule } from '@/content/schedule';
 import { addRunway, addStand, addTaxiwayRun, createGame } from '@/sim/airport';
 import { buildLinks } from '@/sim/connectivity';
-import { fullyServiced } from './helpers';
+import { fullyServiced, licensed } from './helpers';
 
 import { DAY_SECONDS, runDay, startDay, stepDay, SIM_DT } from '@/sim/step';
 import type { GameState, ScheduledArrival } from '@/sim/types';
@@ -104,6 +104,7 @@ describe('assignment reasons', () => {
   it('blames the apron when the only linked stand is too small', () => {
     const small = createGame(LEVEL_MEADOW);
     giveFacilities(small);
+    licensed(small.airport);
     addRunway(small.airport, 8, 4, 15, 'asphalt'); // 12 tiles, hard surface
     addTaxiwayRun(small.airport, 9, 10, 11, 10);
     addStand(small.airport, 12, 10, 'small'); // a narrowbody will not fit
@@ -265,8 +266,14 @@ describe('throughput', () => {
     // working airport is well before the clock runs out.
     expect(day.elapsed).toBeLessThan(DAY_SECONDS * 2);
 
-    const expected = day.events.reduce((sum, e) => sum + e.cash, 0);
-    expect(state.cash).toBe(startingCash + expected);
+    // The full ledger: takings from the events, less the running costs, which are tracked on
+    // the day rather than netted into each event so the debrief can show them separately.
+    const takings = day.events.reduce((sum, e) => sum + e.cash, 0);
+    const operating = day.handlingCost + day.certificationCost;
+    expect(state.cash).toBe(startingCash + takings - operating);
+
+    // Handling is charged per landing, so two aeroplanes down means it cannot be zero.
+    expect(day.handlingCost).toBeGreaterThan(0);
   });
 });
 

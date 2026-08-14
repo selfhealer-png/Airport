@@ -126,6 +126,14 @@ export interface Airport {
   roads: Uint8Array;
   /** Placed facilities. Each occupies a tile, so land is a real constraint. */
   facilities: Facility[];
+  /**
+   * Aerodrome certification: the size of aeroplane this airport is *licensed* to accept.
+   *
+   * An index into `CERTIFICATION_LEVELS`, not a tile count. It is airport state rather than a
+   * facility because it occupies no land — what it costs is a standing daily fee, which is
+   * the point: it is the one upgrade you can regret holding.
+   */
+  certification: number;
   /** Per-airport counter, so ids are deterministic and survive a save/load round trip. */
   nextEntityId: number;
 }
@@ -159,6 +167,7 @@ export type BlockReason =
   | 'no-stand'
   | 'no-stand-size'
   | 'no-road-stand'
+  | 'not-certified'
   | 'no-helipad'
   | 'no-road-helipad'
   | 'helipad-busy'
@@ -316,6 +325,16 @@ export interface DayState {
   passengersHandled: number;
   /** Passengers that landed but found no room in the terminal. */
   passengersTurnedAway: number;
+  /**
+   * Ground handling paid today, accumulated per landing.
+   *
+   * Kept apart from `DayEvent.cash` rather than netted into it so the debrief can show
+   * takings and running costs as two numbers. A cost the player cannot see is a cost they
+   * cannot plan around, which is the whole reason the debrief exists.
+   */
+  handlingCost: number;
+  /** The certification fee, charged once when the day closes whatever flew. */
+  certificationCost: number;
 }
 
 export type GamePhase = 'planning' | 'day' | 'debrief';

@@ -1,7 +1,9 @@
 import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import {
+  certificationLevel,
   CRASH_COST,
   FUEL_FARM_TURNAROUND_FACTOR,
+  handlingCost,
   passengerRevenue,
   towerLevel,
 } from '@/content/buildings';
@@ -60,6 +62,7 @@ const STRUCTURAL_REASONS: ReadonlySet<string> = new Set([
   'no-taxi-link',
   'no-stand-size',
   'no-road-stand',
+  'not-certified',
   'no-helipad',
   'no-road-helipad',
   'no-fuel-farm',
@@ -122,6 +125,8 @@ export function startDay(state: GameState, schedule: readonly ScheduledArrival[]
     services: buildServices(state.airport),
     passengersHandled: 0,
     passengersTurnedAway: 0,
+    handlingCost: 0,
+    certificationCost: 0,
   };
   // The campaign's service record counts everything that was booked in, whether or not it
   // ever gets down. Counted here rather than at the debrief so a day abandoned mid-flight
@@ -220,6 +225,17 @@ function land(state: GameState, day: DayState, aircraft: Aircraft): void {
   const shops = workingShops(state.airport, day.services);
   const fare = Math.round(spec.fare * terminals.fareMultiplier);
   const fromPassengers = Math.round(processed * passengerRevenue(terminals.fareMultiplier, shops));
+
+  /*
+   * Ground handling, charged only on aeroplanes that actually got down.
+   *
+   * Deducted here rather than folded into `event.cash` so the debrief can show takings and
+   * running costs separately — netting them would hide the entire mechanic behind a number
+   * that just looks like a smaller fare.
+   */
+  const handling = handlingCost(fare + fromPassengers);
+  day.handlingCost += handling;
+  state.cash -= handling;
 
   record(state, day, {
     aircraftId: aircraft.id,
@@ -435,7 +451,22 @@ export function stepDay(state: GameState, dt: number): void {
     if (TIMED_PHASES.has(aircraft.phase)) advanceTimed(state, day, aircraft, dt);
   }
 
-  if (isDayFinished(day)) state.phase = 'debrief';
+  if (isDayFinished(day)) closeDay(state, day);
+}
+
+/**
+ * Settles the day's standing costs and moves to the debrief.
+ *
+ * Certification is charged here, once, whatever flew — that is what makes it a *standing*
+ * fee rather than a per-flight one, and what makes electing a category you cannot fill a real
+ * mistake. Charged at the close rather than at the open so a day can always pay for itself
+ * out of what it earned.
+ */
+function closeDay(state: GameState, day: DayState): void {
+  const fee = certificationLevel(state.airport.certification).dailyCost;
+  day.certificationCost = fee;
+  state.cash -= fee;
+  state.phase = 'debrief';
 }
 
 /** Runs a whole day to completion. Used by the tests and the headless day harness. */
@@ -470,6 +501,8 @@ export function explainReason(reason: string | null): string {
       return 'no stand big enough for it';
     case 'no-road-stand':
       return 'no road reaching a stand of the right size';
+    case 'not-certified':
+      return 'the aerodrome is not licensed for aircraft this size';
     case 'no-helipad':
       return 'no helipad — it does not use a runway';
     case 'no-road-helipad':

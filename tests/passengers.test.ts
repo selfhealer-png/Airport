@@ -14,7 +14,7 @@ import { buildServices } from '@/sim/connectivity';
 import { runDay } from '@/sim/step';
 import { summariseDay } from '@/ui/debrief';
 import type { GameState, ScheduledArrival } from '@/sim/types';
-import { fullyServiced } from './helpers';
+import { fullyServiced, licensed } from './helpers';
 
 /**
  * Passengers are the second axis of the economy. A longer runway lets a bigger aeroplane in;
@@ -55,6 +55,7 @@ function airport(levels: number | number[], shops = 0): GameState {
   }
 
   fullyServiced(state.airport);
+  licensed(state.airport);
   return state;
 }
 
@@ -119,16 +120,16 @@ describe('passengers', () => {
     const roomy = airport(4);
     const schedule = [arrival(0, 'freighter')];
 
-    const before = cramped.cash;
-    const crampedDay = runDay(cramped, schedule);
-    const roomyBefore = roomy.cash;
-    runDay(roomy, schedule);
+    const crampedDay = summariseDay(runDay(cramped, schedule));
+    const roomyDay = summariseDay(runDay(roomy, schedule));
 
-    expect(summariseDay(crampedDay).passengersTurnedAway).toBe(0);
-    // The terminal's fare multiplier still applies to the landing fee, so the two are not
-    // identical — but the cramped airport loses nothing to overflow.
-    expect(cramped.cash - before).toBeGreaterThan(0);
-    expect(roomy.cash - roomyBefore).toBeGreaterThan(0);
+    expect(crampedDay.passengersTurnedAway).toBe(0);
+    // Measured on takings, not on the change in cash: these fixtures hold the top licence,
+    // whose standing daily fee would swamp a one-flight day and has nothing to do with what
+    // is being tested here. The terminal's fare multiplier still applies to the landing fee,
+    // so the two are not identical — but the cramped airport loses nothing to overflow.
+    expect(crampedDay.takings).toBeGreaterThan(0);
+    expect(roomyDay.takings).toBeGreaterThan(0);
   });
 });
 

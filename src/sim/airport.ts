@@ -34,6 +34,8 @@ export function createAirport(map: LevelMap): Airport {
     taxiways: new Uint8Array(map.width * map.height),
     roads: new Uint8Array(map.width * map.height),
     facilities: [],
+    // Category A: light aircraft and helicopters, and free to hold.
+    certification: 0,
     nextEntityId: 1,
   };
 }
