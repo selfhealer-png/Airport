@@ -37,6 +37,8 @@
 | `tests/progress.test.ts` | *New.* Unlock chain, de-duplication and record parsing |
 | `tests/menu.test.ts` | *New.* `menuRows()` row states |
 
+Task 9 is a late addition — a testing affordance for reaching later levels without playing fifty days first. It runs after Task 7 and before Task 8.
+
 ---
 
 ### Task 1: Terrain authoring parser
@@ -1445,6 +1447,179 @@ Expected: all PASS, typecheck clean, build succeeds.
 ```bash
 git add CLAUDE.md README.md
 git commit -m "Document the menu, the unlock chain and the level invariants"
+```
+
+---
+
+### Task 9: Unlock-all, for testing
+
+Reaching Bracken Rise means finishing fifty days on the meadow. That is right for a player and
+useless for testing the level you just built, so the menu gets a way to open everything.
+
+A **tap gesture on the menu title**, not a URL parameter or a console function: the game is an
+installed PWA on a phone, where there is no address bar to type into and no console to call
+into. Five taps is far past anything a real player does by accident, and the menu says plainly
+when it has fired so it can never be triggered without the tester noticing.
+
+Order: run this task **after Task 7** — the menu has to be reachable before a cheat into it is
+worth anything — and before Task 8, so the documentation pass covers it.
+
+**Files:**
+- Modify: `src/save/progress.ts`
+- Modify: `src/ui/menu.ts`
+- Modify: `src/main.ts`
+- Test: `tests/progress.test.ts`
+
+**Interfaces:**
+- Consumes: `LEVELS` from `@/content/levels`; `MenuHandlers` from `@/ui/menu`
+- Produces: `everyLevelId(): string[]` and `unlockAll(): void` in `@/save/progress`;
+  `MenuHandlers.onUnlockAll(): void`
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `tests/progress.test.ts`:
+
+```ts
+import { everyLevelId } from '@/save/progress';
+
+/**
+ * Reaching a later level means finishing the one before it, which is right for a player and
+ * useless for testing the map you just drew.
+ */
+describe('unlocking everything for testing', () => {
+  it('names every level, so nothing is left locked', () => {
+    expect(everyLevelId()).toEqual(LEVELS.map((level) => level.id));
+  });
+
+  it('satisfies the unlock chain for every level', () => {
+    const all = everyLevelId();
+    for (const level of LEVELS) {
+      expect(isUnlocked(level.id, all)).toBe(true);
+    }
+  });
+});
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `export PATH="$PATH:/c/Program Files/nodejs"; npm test -- tests/progress.test.ts`
+Expected: FAIL — `everyLevelId` is not exported from `@/save/progress`.
+
+- [ ] **Step 3: Add the two functions**
+
+In `src/save/progress.ts`, add `everyLevelId` beside the other pure functions (above
+`storage()`):
+
+```ts
+/** Every level's id — what "unlocked" looks like when nothing is locked. */
+export function everyLevelId(): string[] {
+  return LEVELS.map((level) => level.id);
+}
+```
+
+and `unlockAll` beside the other wrappers (below `storage()`):
+
+```ts
+/**
+ * Opens every level at once.
+ *
+ * A testing affordance, not a game mechanic: reaching Bracken Rise legitimately means fifty
+ * days on the meadow, which is a poor way to check the map you have just drawn. Writes the
+ * same record `markCompleted` does, so "Reset everything" undoes it like anything else.
+ */
+export function unlockAll(): void {
+  const store = storage();
+  if (!store) return;
+  try {
+    store.setItem(KEY, JSON.stringify({ version: PROGRESS_VERSION, completed: everyLevelId() }));
+  } catch {
+    // Losing the record is survivable; crashing is not.
+  }
+}
+```
+
+- [ ] **Step 4: Add the gesture to the menu**
+
+In `src/ui/menu.ts`, add to the `MenuHandlers` interface:
+
+```ts
+export interface MenuHandlers {
+  onPlay(levelId: string): void;
+  onResetEverything(): void;
+  /** Fired by the hidden tap gesture on the title. See `createMenu`. */
+  onUnlockAll(): void;
+}
+```
+
+Inside `createMenu`, above the `api` declaration, add the counter:
+
+```ts
+  /*
+   * Five taps on the title unlocks every level.
+   *
+   * A gesture rather than a URL parameter or a console call, because the game is an installed
+   * PWA on a phone: there is no address bar to type into and no console to call from. Five is
+   * far past anything a player reaches by accident, and the title says so once it fires, so it
+   * can never trigger silently.
+   */
+  let titleTaps = 0;
+  let unlocked = false;
+```
+
+Then, inside `refresh`, replace the two lines that create and set the title:
+
+```ts
+      const title = document.createElement('h1');
+      title.className = 'menu-title';
+      title.textContent = 'Airfield';
+```
+
+with:
+
+```ts
+      const title = document.createElement('h1');
+      title.className = 'menu-title';
+      title.textContent = unlocked ? 'Airfield — all levels unlocked' : 'Airfield';
+      title.addEventListener('click', () => {
+        titleTaps += 1;
+        if (titleTaps < 5) return;
+        titleTaps = 0;
+        unlocked = true;
+        handlers.onUnlockAll();
+      });
+```
+
+- [ ] **Step 5: Wire it up**
+
+In `src/main.ts`, add `unlockAll` to the progress import:
+
+```ts
+import { clearProgress, loadProgress, markCompleted, unlockAll } from '@/save/progress';
+```
+
+and add the handler to the `createMenu` call, beside `onResetEverything`:
+
+```ts
+    onUnlockAll: () => {
+      unlockAll();
+      showMenu();
+    },
+```
+
+- [ ] **Step 6: Verify**
+
+Run: `export PATH="$PATH:/c/Program Files/nodejs"; npm test && npm run typecheck && npm run build`
+Expected: all PASS, typecheck clean, build succeeds.
+
+Then `npm run dev`, open `http://localhost:5173/`, and confirm: tapping the title four times does
+nothing visible; the fifth changes it to `Airfield — all levels unlocked` and Bracken Rise
+becomes playable. Then tap **Reset everything** twice and confirm Bracken Rise locks again.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/save/progress.ts src/ui/menu.ts src/main.ts tests/progress.test.ts
+git commit -m "Add a tap gesture that unlocks every level, for testing"
 ```
 
 ---
