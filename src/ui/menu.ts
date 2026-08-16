@@ -126,6 +126,14 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
 
   const api: Menu = {
     refresh(completed, current) {
+      /*
+       * A re-render invalidates any pending confirmation: the wiring layer may call refresh()
+       * with fresher state while a row is still armed, and the old timer must not survive to
+       * fire later and repaint this stale-data render over it. Cancel it up front, every time.
+       */
+      if (armedTimer) clearTimeout(armedTimer);
+      armedTimer = null;
+
       const panel = document.createElement('div');
       panel.className = 'menu-panel';
 
@@ -173,11 +181,13 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
           }
           disarm();
           armed = row.levelId;
+          // Scheduled after the render call below, not before: refresh() cancels any
+          // in-flight timer as its first act, and this one must survive to arm the row.
+          api.refresh(completed, current);
           armedTimer = setTimeout(() => {
             disarm();
             api.refresh(completed, current);
           }, 4000);
-          api.refresh(completed, current);
         });
 
         panel.append(button);
