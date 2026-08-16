@@ -16,7 +16,7 @@ import { showDebrief } from '@/ui/debrief';
 import { CAMPAIGN_DAYS } from '@/content/schedule';
 import { commitPlacement, resolvePlacement, type Placement } from '@/ui/placement';
 import { createMenu, type CurrentGame } from '@/ui/menu';
-import { clearProgress, loadProgress } from '@/save/progress';
+import { clearProgress, loadProgress, markCompleted } from '@/save/progress';
 import { toSnapshot, restoreInto } from '@/save/snapshot';
 import { LEVELS } from '@/content/levels';
 import type { GamePhase, TileIndex } from '@/sim/types';
@@ -211,15 +211,16 @@ function start(): void {
 
   resetButton.addEventListener('click', () => {
     if (!resetArmed) {
-      resetButton.textContent = 'Tap again to wipe everything';
+      resetButton.textContent = 'Tap again to wipe this airport';
       resetButton.classList.add('is-armed');
       resetArmed = setTimeout(disarmReset, 4000);
       return;
     }
     disarmReset();
-    wiping = true;
+    // Only this level's game goes. Unlocks live on their own key precisely so that finishing
+    // a level is never undone by starting again.
     clearGame();
-    window.location.reload();
+    showMenu();
   });
 
   planningBody.append(resetButton);
@@ -313,6 +314,16 @@ function start(): void {
     },
   });
 
+  /*
+   * The level name is the way back. Leaving mid-day loses that day — but so does a reload,
+   * because a day in progress is deliberately never saved, so this is the existing rule
+   * rather than a new one.
+   */
+  title.addEventListener('click', () => {
+    if (state.phase === 'planning') saveGame(state);
+    showMenu();
+  });
+
   function showMenu(): void {
     inMenu = true;
     menu.refresh(loadProgress(), currentGame());
@@ -379,17 +390,21 @@ function start(): void {
   function finishDay(): void {
     const day = state.current;
     if (!day) return;
+    const finalDay = state.day >= CAMPAIGN_DAYS;
     showDebrief(
       modalHost,
       day,
       () => {
+        // Recorded on dismissal of day 50, and idempotent: the campaign carries on as a
+        // sandbox afterwards, so every later day satisfies this too.
+        if (finalDay) markCompleted(state.airport.map.id);
         state.day += 1;
         state.phase = 'planning';
         state.current = null;
         saveGame(state);
         showPlanning();
       },
-      state.day >= CAMPAIGN_DAYS,
+      finalDay,
       { landedTotal: state.landedTotal, scheduledTotal: state.scheduledTotal },
     );
   }
@@ -444,6 +459,7 @@ function start(): void {
       shownCash = state.cash;
     }
     cash.textContent = `£${state.cash.toLocaleString()}`;
+    title.textContent = state.airport.map.name;
     dayText.textContent = `Day ${state.day}`;
   }
 
@@ -485,6 +501,9 @@ function start(): void {
   // are the last reliable moments to write.
   const persist = (): void => {
     if (wiping) return;
+    // Nothing to save from the menu, and writing here would resurrect a game the player has
+    // just abandoned with Start over — the same hazard the `wiping` latch exists for.
+    if (inMenu) return;
     if (state.phase === 'planning') saveGame(state);
   };
   window.addEventListener('pagehide', persist);
