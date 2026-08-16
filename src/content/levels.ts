@@ -11,6 +11,51 @@ function filled(width: number, height: number, terrain: Terrain): Terrain[] {
 }
 
 /**
+ * The characters a level map is authored in.
+ *
+ * Terrain is written as a block of strings, one character per tile, for the same reason
+ * sprites are: a map is far easier to read, diff and edit as a picture than as an array of
+ * enum values, and a mistake shows up as a shape that looks wrong.
+ */
+const TERRAIN_KEYS: Readonly<Record<string, Terrain>> = {
+  g: 'grass',
+  w: 'water',
+  r: 'rock',
+  f: 'woods',
+};
+
+/**
+ * Parses an authored map. Throws on anything malformed rather than producing a map with a
+ * hole in it — `tests/levels.test.ts` parses every level, so a bad block fails the suite.
+ */
+export function terrainFrom(rows: readonly string[]): {
+  width: number;
+  height: number;
+  terrain: Terrain[];
+} {
+  const first = rows[0];
+  if (first === undefined) throw new Error('A level map needs at least one row.');
+
+  const width = first.length;
+  const terrain: Terrain[] = [];
+
+  for (const [y, row] of rows.entries()) {
+    if (row.length !== width) {
+      throw new Error(`Level map row ${y} is ${row.length} tiles wide, expected ${width}.`);
+    }
+    for (const [x, key] of [...row].entries()) {
+      const tile = TERRAIN_KEYS[key];
+      if (tile === undefined) {
+        throw new Error(`Unknown terrain character '${key}' at ${x},${y}.`);
+      }
+      terrain.push(tile);
+    }
+  }
+
+  return { width, height: rows.length, terrain };
+}
+
+/**
  * Sized so the whole field fits on a phone at one CSS pixel per sprite pixel.
  *
  * The longest aeroplane wants sixteen tiles of runway, and beside that has to fit taxiways,
