@@ -15,6 +15,10 @@ import { createDayBar, type Speed } from '@/ui/daybar';
 import { showDebrief } from '@/ui/debrief';
 import { CAMPAIGN_DAYS } from '@/content/schedule';
 import { commitPlacement, resolvePlacement, type Placement } from '@/ui/placement';
+import { createMenu, type CurrentGame } from '@/ui/menu';
+import { clearProgress, loadProgress } from '@/save/progress';
+import { toSnapshot, restoreInto } from '@/save/snapshot';
+import { LEVELS } from '@/content/levels';
 import type { GamePhase, TileIndex } from '@/sim/types';
 
 /**
@@ -60,14 +64,21 @@ function start(): void {
   const wrap = document.querySelector<HTMLElement>('#map-wrap');
   const drawerRoot = document.querySelector<HTMLElement>('#drawer');
   const modalRoot = document.querySelector<HTMLElement>('#modal');
+  const menuRoot = document.querySelector<HTMLElement>('#menu');
+  const titleButton = document.querySelector<HTMLElement>('#hud-title');
   const cashLabel = document.querySelector<HTMLElement>('#hud-cash');
   const dayLabel = document.querySelector<HTMLElement>('#hud-day');
-  if (!canvas || !wrap || !drawerRoot || !modalRoot || !cashLabel || !dayLabel) {
+  if (
+    !canvas || !wrap || !drawerRoot || !modalRoot || !menuRoot ||
+    !titleButton || !cashLabel || !dayLabel
+  ) {
     throw new Error('App shell is missing an expected element.');
   }
 
   const drawerHost = drawerRoot;
   const modalHost = modalRoot;
+  const menuHost = menuRoot;
+  const title = titleButton;
   const cash = cashLabel;
   const dayText = dayLabel;
 
@@ -275,6 +286,75 @@ function start(): void {
     updateHud();
   }
 
+  /**
+   * Every level plays the same fifty days.
+   *
+   * Identical traffic across maps makes the terrain the only variable, which suits a game
+   * whose whole claim is that you are tested on your airport and not on your luck. A per-level
+   * seed is a one-line change if that stops being true.
+   */
+  const SEED = 42;
+
+  /** True while the menu is up, so the autosave does not write a game nobody is playing. */
+  let inMenu = false;
+
+  const currentGame = (): CurrentGame | null => {
+    const saved = loadGame();
+    return saved ? { levelId: saved.airport.map.id, day: saved.day } : null;
+  };
+
+  const menu = createMenu(menuHost, {
+    onPlay: (levelId) => enterLevel(levelId),
+    onResetEverything: () => {
+      wiping = true;
+      clearGame();
+      clearProgress();
+      window.location.reload();
+    },
+  });
+
+  function showMenu(): void {
+    inMenu = true;
+    menu.refresh(loadProgress(), currentGame());
+    menuHost.hidden = false;
+  }
+
+  /**
+   * Starts or resumes a level.
+   *
+   * Restores *into* the existing state rather than swapping in a new object: the render loop,
+   * the pointer handlers and the drawer all closed over this one when they were wired up, so
+   * replacing it would leave them driving a game nobody can see. That is the same reason undo
+   * works this way.
+   */
+  function enterLevel(levelId: string): void {
+    const map = LEVELS.find((level) => level.id === levelId);
+    if (!map) return;
+
+    const saved = loadGame();
+    // Built through `toSnapshot` even for a fresh game, so entering a level goes down exactly
+    // the same path as loading one — `restoreInto` validates it either way.
+    const snapshot =
+      saved && saved.airport.map.id === levelId
+        ? toSnapshot(saved)
+        : toSnapshot(createGame(map, SEED));
+    if (!restoreInto(state, snapshot)) return;
+
+    history.clear();
+    drawer.clearSelection();
+    placement = null;
+    dragFrom = null;
+    // Levels may differ in size, so the map has to re-fit itself; without this the new field
+    // is drawn at the previous one's zoom and offset, with nothing to explain why.
+    framed = false;
+    relayout();
+
+    inMenu = false;
+    menuHost.hidden = true;
+    saveGame(state);
+    showPlanning();
+  }
+
   function beginDay(): void {
     drawer.clearSelection();
     placement = null;
@@ -440,6 +520,7 @@ function start(): void {
   };
 
   showPlanning();
+  showMenu();
   requestAnimationFrame(frame);
 }
 

@@ -787,3 +787,14 @@ body {
   opacity: 0.7;
   font-variant-numeric: tabular-nums;
 }
+
+/* The level name doubles as the way back to the menu: already on screen, already says where
+   you are, and costs no space on a phone. */
+button.hud-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
