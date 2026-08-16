@@ -82,7 +82,62 @@ export const LEVEL_MEADOW: LevelMap = {
   terrain: filled(FIELD_WIDTH, FIELD_HEIGHT, 'grass'),
 };
 
-export const LEVELS: readonly LevelMap[] = [LEVEL_MEADOW];
+/**
+ * The second field: rock across the north-west, woods through the south-centre.
+ *
+ * Placed so the map does not play as the meadow with holes in it. The rock pushes the
+ * obvious long-runway column east, and the woods stop the apron sprawling south the way it
+ * can on an empty field — so the player has to choose a shape rather than repeat the one
+ * they already know.
+ *
+ * Obstacles are permanent for now: `isBuildable()` refuses anything that is not grass, and
+ * paying to clear ground is a later piece of work.
+ */
+export const LEVEL_BRACKEN_RISE: LevelMap = {
+  id: 'bracken-rise',
+  name: 'Bracken Rise',
+  ...terrainFrom([
+    'gggggggggggggggggggggggg',
+    'gggggggggggggggggggggggg',
+    'gggrggggrggggggggggggggg',
+    'grrrrrgrrrgggggggggggggg',
+    'grrrrrrrrrrggggggggggggg',
+    'rrrrrrrrrrgggggggggggggg',
+    'grrrrrrrrggggggggggggggg',
+    'grrrrrrrrggggggggggggggg',
+    'gggrrrrrrrgggggggggggggg',
+    'ggggrrrrrggggggggggggggg',
+    'gggrrrrggggggggggggggggg',
+    'ggrrrrrggggggggggggggggg',
+    'gggrrrgggggggggggggggggg',
+    'ggggrggggggggggggggggggg',
+    'gggggggggggggggggggggggg',
+    'gggggggggggggggggggggggg',
+    'gggggggggggggggggggggggg',
+    'gggggggggggggggggggggggg',
+    'gggggggggggggggggggggggg',
+    'gggggggggggggggggggggggg',
+    'gggggggggggggggggggggggg',
+    'gggggggggggggggggfgggggg',
+    'ggggggggggfgggggfffggggg',
+    'ggggggggfffffggfffffgggg',
+    'gggggggffffffffffffggggg',
+    'ggggggggffffffffffgggggg',
+    'ggggggggggfffffffggggggg',
+    'ggggggggfggfffffffgggggg',
+    'gggggggfffggfffffggggggg',
+    'ggggggfffffgfffffggggggg',
+    'gggggggfffggggfggggggggg',
+    'ggggggggfggggfgggggggggg',
+    'ggggggggggfffffffggggggg',
+    'gggggggggggggfgggggggggg',
+    'gggggggggggggggggggggggg',
+    'gggggggggggggggggggggggg',
+  ]),
+};
+
+/** Order is the campaign order — `isUnlocked()` reads it as a chain. */
+export const LEVELS: readonly LevelMap[] = [LEVEL_MEADOW, LEVEL_BRACKEN_RISE];
 
 export function levelById(id: string): LevelMap | undefined {
   return LEVELS.find((level) => level.id === id);
