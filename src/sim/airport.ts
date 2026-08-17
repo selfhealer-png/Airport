@@ -33,6 +33,7 @@ export function createAirport(map: LevelMap): Airport {
     helipads: [],
     taxiways: new Uint8Array(map.width * map.height),
     roads: new Uint8Array(map.width * map.height),
+    groundworks: new Uint8Array(map.width * map.height),
     facilities: [],
     // Category A: light aircraft and helicopters, and free to hold.
     certification: 0,
@@ -288,6 +289,20 @@ export function addRoadRun(
   for (let i = 0; i <= steps; i++) {
     addRoad(airport, x0 + stepX * i, y0 + stepY * i);
   }
+}
+
+/**
+ * Ground that has been worked. What that bought is read from the terrain underneath —
+ * see `terrainAllows`.
+ */
+export function hasGroundwork(airport: Airport, x: number, y: number): boolean {
+  if (x < 0 || y < 0 || x >= airport.map.width || y >= airport.map.height) return false;
+  return airport.groundworks[y * airport.map.width + x] === 1;
+}
+
+export function addGroundwork(airport: Airport, x: number, y: number): void {
+  if (x < 0 || y < 0 || x >= airport.map.width || y >= airport.map.height) return;
+  airport.groundworks[y * airport.map.width + x] = 1;
 }
 
 export function hasRoad(airport: Airport, x: number, y: number): boolean {

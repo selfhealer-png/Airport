@@ -1,4 +1,4 @@
-import type { FacilityType, RunwaySurface, StandSize } from '@/sim/types';
+import type { FacilityType, RunwaySurface, StandSize, Terrain } from '@/sim/types';
 
 /**
  * What everything costs. Balance data — `sim/build.ts` reads these and never names a price
@@ -57,6 +57,23 @@ export const LEVELLED_FACILITIES: ReadonlySet<FacilityType> = new Set(['tower', 
 
 /** Demolition returns a fraction of what was paid. Mistakes should sting, not ruin. */
 export const DEMOLITION_REFUND = 0.4;
+
+/**
+ * Groundworks, per tile, by what is underneath.
+ *
+ * Felling is priced against a runway tile (grass £110, gravel £240) — a nuisance, not a
+ * project. A bridge or a tunnel is priced against a *stand*, because that is the scale of
+ * decision it is: a five-tile causeway is £4,500, roughly a large stand, and the player will
+ * think about the route rather than reaching for the chip.
+ *
+ * Grass is in the table at zero so a drag across mixed ground prices without a special case.
+ */
+export const GROUNDWORK_COST: Readonly<Record<Terrain, number>> = {
+  grass: 0,
+  woods: 180,
+  water: 900,
+  rock: 1_400,
+};
 
 /** Shorter than this is not a runway, it is a field with markings on it. */
 export const MIN_RUNWAY_TILES = 3;

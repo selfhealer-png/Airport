@@ -53,9 +53,41 @@ export interface LevelMap {
   readonly terrain: readonly Terrain[];
 }
 
-/** Terrain that can be built on without clearing work. */
-export function isBuildable(terrain: Terrain): boolean {
-  return terrain === 'grass';
+/** What is being put on a tile. Ground that has been worked carries different things. */
+export type BuildKind = 'structure' | 'taxiway' | 'road';
+
+/**
+ * Whether a tile will take something.
+ *
+ * The obvious design — pay per tile, obstacle becomes grass — is wrong, and it is worth
+ * saying why, because it is the version that keeps suggesting itself. If clearing converts
+ * everything to buildable ground then terrain is a **money tax**: it slows a rich player down
+ * and stops nobody, and every obstacle map eventually plays as the meadow with a bill
+ * attached. Authoring a river through a level would buy nothing the moment the player could
+ * afford the river.
+ *
+ * So what an obstacle becomes depends on what it was, and the difference is what may *cross*
+ * it rather than what it costs:
+ *
+ * - **Woods** become ordinary ground. The pressure valve — the obstacle you buy your way
+ *   past outright, which is what stops an obstacle map being unwinnable.
+ * - **Water** takes a bridge, which carries both networks but holds no building. It splits
+ *   the ground you can build on without splitting the routes across it, so an airport can
+ *   straddle an inlet.
+ * - **Rock** takes a tunnel, which carries a road alone. That splits the *airside*
+ *   absolutely: a runway and its apron can never sit on opposite sides of a ridge, while the
+ *   landside still reaches both. It is what makes the single-connected-road-network rule a
+ *   planning problem on those maps rather than a formality.
+ *
+ * Pure, and takes no `Airport`: the caller looks the mask up. That keeps the rule readable
+ * beside the terrain it is about.
+ */
+export function terrainAllows(terrain: Terrain, worked: boolean, kind: BuildKind): boolean {
+  if (terrain === 'grass') return true;
+  if (!worked) return false;
+  if (terrain === 'woods') return true;
+  if (terrain === 'water') return kind !== 'structure';
+  return kind === 'road';
 }
 
 export function terrainAt(map: LevelMap, x: number, y: number): Terrain | undefined {
@@ -124,6 +156,15 @@ export interface Airport {
    * land and planning rather than money.
    */
   roads: Uint8Array;
+  /**
+   * Row-major mask, 1 where the ground has been worked and paid for.
+   *
+   * One mask covers felling, bridging and tunnelling: *what* the work bought is read from the
+   * terrain underneath through `terrainAllows`, so no tile can end up a bridge over grass and
+   * there is no second field to keep in step. Groundworks are permanent — nothing un-fells a
+   * wood — so demolition never touches this.
+   */
+  groundworks: Uint8Array;
   /** Placed facilities. Each occupies a tile, so land is a real constraint. */
   facilities: Facility[];
   /**

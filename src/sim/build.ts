@@ -8,6 +8,7 @@ import {
 import {
   DEMOLITION_REFUND,
   FACILITY_COST,
+  GROUNDWORK_COST,
   HELIPAD_COST,
   LEVELLED_FACILITIES,
   MILITARY_RUNWAY_PREMIUM,
@@ -17,13 +18,14 @@ import {
   STAND_COST,
   TAXIWAY_COST_PER_TILE,
 } from '@/content/costs';
-import { facilityOf, shopsOf, terminalsOf } from './airport';
+import { addGroundwork, facilityOf, hasGroundwork, shopsOf, terminalsOf } from './airport';
 import {
-  isBuildable,
   runwayLength,
   SURFACE_RANK,
+  terrainAllows,
   terrainAt,
   type Airport,
+  type BuildKind,
   type FacilityType,
   type GameState,
   type Runway,
@@ -84,10 +86,15 @@ export function occupantAt(airport: Airport, x: number, y: number): Occupant {
   return null;
 }
 
-function tileIsFree(airport: Airport, x: number, y: number): BuildError | null {
+function tileIsFree(
+  airport: Airport,
+  x: number,
+  y: number,
+  kind: BuildKind,
+): BuildError | null {
   const terrain = terrainAt(airport.map, x, y);
   if (terrain === undefined) return 'off-map';
-  if (!isBuildable(terrain)) return 'terrain-blocked';
+  if (!terrainAllows(terrain, hasGroundwork(airport, x, y), kind)) return 'terrain-blocked';
   if (occupantAt(airport, x, y) !== null) return 'occupied';
   return null;
 }
@@ -121,7 +128,7 @@ export function checkRunway(
   if (tiles < MIN_RUNWAY_TILES) return 'too-short';
 
   for (let y = top; y <= bottom; y++) {
-    const problem = tileIsFree(state.airport, x, y);
+    const problem = tileIsFree(state.airport, x, y, 'structure');
     if (problem) return problem;
   }
 
@@ -137,12 +144,12 @@ export function checkExtendRunway(state: GameState, runwayId: string, tiles: num
   // Grow downwards first, then upwards — whichever direction has room.
   let added = 0;
   let y = runway.y1 + 1;
-  while (added < tiles && tileIsFree(state.airport, runway.x, y) === null) {
+  while (added < tiles && tileIsFree(state.airport, runway.x, y, 'structure') === null) {
     added++;
     y++;
   }
   y = runway.y0 - 1;
-  while (added < tiles && tileIsFree(state.airport, runway.x, y) === null) {
+  while (added < tiles && tileIsFree(state.airport, runway.x, y, 'structure') === null) {
     added++;
     y--;
   }
@@ -199,7 +206,7 @@ export function checkGrowRunway(
 
   for (let y = top; y <= bottom; y++) {
     if (y >= runway.y0 && y <= runway.y1) continue;
-    const problem = tileIsFree(state.airport, runway.x, y);
+    const problem = tileIsFree(state.airport, runway.x, y, 'structure');
     if (problem) return problem;
   }
 
@@ -234,7 +241,7 @@ export function checkResurface(
 // --- Taxiways and stands ---------------------------------------------------------------
 
 export function checkTaxiway(state: GameState, x: number, y: number): BuildCheck {
-  const problem = tileIsFree(state.airport, x, y);
+  const problem = tileIsFree(state.airport, x, y, 'taxiway');
   if (problem) return problem;
   return afford(state, TAXIWAY_COST_PER_TILE);
 }
@@ -260,7 +267,7 @@ export function checkTaxiwayRun(
     // Already-laid taxiway is skipped rather than rejected, so dragging over an existing
     // run to join two stubs does what the player obviously meant.
     if (occupantAt(state.airport, x, y) === 'taxiway') continue;
-    const problem = tileIsFree(state.airport, x, y);
+    const problem = tileIsFree(state.airport, x, y, 'taxiway');
     if (problem) return problem;
     tiles++;
   }
@@ -294,7 +301,7 @@ export function checkRoadRun(
     const x = x0 + stepX * i;
     const y = y0 + stepY * i;
     if (occupantAt(state.airport, x, y) === 'road') continue;
-    const problem = tileIsFree(state.airport, x, y);
+    const problem = tileIsFree(state.airport, x, y, 'road');
     if (problem) return problem;
     tiles++;
   }
@@ -304,7 +311,7 @@ export function checkRoadRun(
 }
 
 export function checkStand(state: GameState, x: number, y: number, size: StandSize): BuildCheck {
-  const problem = tileIsFree(state.airport, x, y);
+  const problem = tileIsFree(state.airport, x, y, 'structure');
   if (problem) return problem;
   return afford(state, STAND_COST[size]);
 }
@@ -317,7 +324,7 @@ export function checkStand(state: GameState, x: number, y: number, size: StandSi
  * stand have. What it shares with facilities is only that it occupies a tile.
  */
 export function checkHelipad(state: GameState, x: number, y: number): BuildCheck {
-  const problem = tileIsFree(state.airport, x, y);
+  const problem = tileIsFree(state.airport, x, y, 'structure');
   if (problem) return problem;
   return afford(state, HELIPAD_COST);
 }
@@ -372,7 +379,7 @@ export function checkFacility(
     return 'already-built';
   }
 
-  const problem = tileIsFree(state.airport, x, y);
+  const problem = tileIsFree(state.airport, x, y, 'structure');
   if (problem) return problem;
 
   if (type === 'terminal') {
@@ -461,11 +468,11 @@ export function applyExtendRunway(
   spend(state, quote);
 
   let added = 0;
-  while (added < tiles && tileIsFree(state.airport, runway.x, runway.y1 + 1) === null) {
+  while (added < tiles && tileIsFree(state.airport, runway.x, runway.y1 + 1, 'structure') === null) {
     runway.y1 += 1;
     added++;
   }
-  while (added < tiles && tileIsFree(state.airport, runway.x, runway.y0 - 1) === null) {
+  while (added < tiles && tileIsFree(state.airport, runway.x, runway.y0 - 1, 'structure') === null) {
     runway.y0 -= 1;
     added++;
   }
