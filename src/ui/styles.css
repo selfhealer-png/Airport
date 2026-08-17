@@ -71,7 +71,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  /* Tight, because the HUD now carries two buttons as well as the day and the cash. */
+  gap: 8px;
   height: calc(var(--hud-height) + env(safe-area-inset-top));
   padding: env(safe-area-inset-top) var(--gutter-right) 0 var(--gutter-left);
   background: var(--panel);
@@ -91,13 +92,48 @@ body {
 
 .hud-group {
   display: flex;
+  align-items: center;
   flex: 0 0 auto;
-  gap: 12px;
+  /* Tighter than it was: the group now carries two buttons as well as the day and the cash. */
+  gap: 8px;
 }
 
 .hud-stat {
   font-variant-numeric: tabular-nums;
   color: var(--accent);
+}
+
+/*
+ * The two HUD controls: keep playing, and stop to build.
+ *
+ * They live in the HUD rather than the drawer because they have to be reachable while a day
+ * is running, when the drawer belongs to the day bar.
+ */
+.hud-button {
+  flex: 0 0 auto;
+  /* 44px is the smallest comfortable touch target; the visible chip is smaller than the box. */
+  min-width: 44px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--chip-edge);
+  border-radius: 8px;
+  background: var(--chip);
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/*
+ * Auto-play announces itself. A mode that silently keeps starting days is alarming when you
+ * cannot see whether it is on, so the button glows for as long as it is running.
+ */
+#hud-auto.is-on {
+  border-color: var(--accent);
+  background: #4a3a1c;
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 10px rgba(232, 180, 74, 0.55);
 }
 
 /*
@@ -885,10 +921,17 @@ body {
 /* The level name doubles as the way back to the menu: already on screen, already says where
    you are, and costs no space on a phone. */
 button.hud-title {
+  min-width: 0;
   padding: 0;
   border: 0;
   background: none;
   color: inherit;
   font: inherit;
   text-align: left;
+  /* Everything else in the HUD is fixed-size, so the level name is what gives when a long one
+     meets a narrow phone. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+

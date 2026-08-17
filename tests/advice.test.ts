@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { LEVEL_MEADOW } from '@/content/levels';
 import { addRunway, addStand, addTaxiwayRun, createGame } from '@/sim/airport';
-import { airportAdvice, tomorrowsTraffic } from '@/sim/advice';
+import { airportAdvice, needsAttention, tomorrowsTraffic } from '@/sim/advice';
 import { generateSchedule } from '@/content/schedule';
 import { runDay } from '@/sim/step';
+import { summariseDay } from '@/ui/debrief';
 import { fullyServiced } from './helpers';
 import type { GameState } from '@/sim/types';
 
@@ -22,6 +23,61 @@ function working(): GameState {
   fullyServiced(state.airport);
   return state;
 }
+
+/**
+ * What auto-play watches.
+ *
+ * It runs day after day while this returns null and hands control back the moment it returns
+ * a reason, so a false null means the game sails past something the player needed to see, and
+ * a false reason means the feature stops constantly and is worthless. Both are worth pinning.
+ */
+describe('needsAttention', () => {
+  it('is quiet about a small airport that is coping', () => {
+    // Day 1 on a working strip: nothing lost, nothing booked it cannot take, nothing to warn
+    // about. This is the case the whole feature exists to skip through.
+    expect(needsAttention(working(), null)).toBeNull();
+  });
+
+  it('speaks up when a class booked in today cannot be taken', () => {
+    const state = working();
+    state.day = 20; // well past the point a six-tile grass strip can serve the schedule
+    expect(needsAttention(state, null)).toMatch(/booked in/i);
+  });
+
+  it('speaks up when the airport has nowhere to park', () => {
+    const state = createGame(LEVEL_MEADOW, 1);
+    addRunway(state.airport, 8, 10, 15, 'grass');
+    fullyServiced(state.airport);
+    expect(needsAttention(state, null)).toMatch(/stand/i);
+  });
+
+  it('speaks up when the day just played lost an aeroplane', () => {
+    // A loss outranks everything else: whatever the cause, an aeroplane that did not get down
+    // is the thing worth looking at, and it is reported with the reason the debrief would use.
+    const state = working();
+    const day = runDay(state, [{ atSeconds: 0, classId: 'commuter' }]);
+
+    expect(summariseDay(day).landed).toBe(0);
+    expect(needsAttention(state, day)).toMatch(/lost/i);
+  });
+
+  it('stays quiet after a day where everything got down', () => {
+    const state = working();
+    const day = runDay(state, [{ atSeconds: 0, classId: 'light' }]);
+
+    expect(summariseDay(day).landed).toBe(1);
+    expect(needsAttention(state, day)).toBeNull();
+  });
+
+  it('counts the losses rather than naming just the one', () => {
+    const state = working();
+    const day = runDay(state, [
+      { atSeconds: 0, classId: 'commuter' },
+      { atSeconds: 1, classId: 'commuter' },
+    ]);
+    expect(needsAttention(state, day)).toMatch(/2 aeroplanes were lost/i);
+  });
+});
 
 describe('the aerodrome licence', () => {
   /**

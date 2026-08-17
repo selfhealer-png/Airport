@@ -359,6 +359,36 @@ details:
   a long chip label in an `auto` track pushes the drawer *and the canvas beside it* past the
   viewport.
 
+### Auto-play, and what counts as a problem
+
+The opening of a campaign has stretches where there is genuinely nothing to build for days,
+and tapping through them is not gameplay. The play button in the HUD keeps opening the airport
+until something wants looking at, glowing for as long as it is running — a mode that silently
+keeps starting days is alarming if you cannot see whether it is on.
+
+**`needsAttention(state, lastDay)` in `sim/advice.ts` is the whole of its judgement**, and it
+is deliberately one definition rather than two that can drift. It fires on, in order: an
+aeroplane lost in the day just played; traffic booked for tomorrow that `structuralBlock`
+says the airport cannot take; or any `warn` from `airportAdvice`. Pure, so it is tested
+headlessly — a false null sails past something the player needed to see, and a false reason
+makes the feature stop constantly and be worthless.
+
+Two consequences worth keeping:
+
+- **The debrief is skipped while auto-play has nothing to report**, and shown when it stops.
+  So the debrief appears exactly when control is being handed back, which makes it worth
+  reading rather than a tap to get past. The final day is never skipped.
+- **Auto-play always switches itself off when it stops**, and pressing play with a problem
+  already on the board refuses and says what it is, rather than appearing to do nothing.
+
+The broad stop condition is a deliberate choice: it will stop most days once the campaign gets
+busy, because by then the advice panel usually has something to say. It is a large win over
+the first fortnight and tapers off, which is where the tedium actually was.
+
+The HUD's other button stops auto-play and opens the build drawer — the way to intervene
+rather than wait for the game to stop you. Both live in the HUD rather than the drawer because
+they must be reachable while a day is running, when the drawer belongs to the day bar.
+
 ### The drawer must never resize the map
 
 `#drawer` is a grid row, so anything that changes its height resizes `#map-wrap`, and a resize

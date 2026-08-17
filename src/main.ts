@@ -13,6 +13,7 @@ import { attachPointerControls } from '@/input/pointer';
 import { LEVEL_MEADOW } from '@/content/levels';
 import { generateSchedule } from '@/content/schedule';
 import { createGame } from '@/sim/airport';
+import { needsAttention } from '@/sim/advice';
 import { clearGame, loadGame, saveGame } from '@/save/storage';
 import { capture, createHistory } from '@/save/history';
 import { explainBuildError, isAffordableQuote } from '@/sim/build';
@@ -75,9 +76,11 @@ function start(): void {
   const titleButton = document.querySelector<HTMLElement>('#hud-title');
   const cashLabel = document.querySelector<HTMLElement>('#hud-cash');
   const dayLabel = document.querySelector<HTMLElement>('#hud-day');
+  const autoButton = document.querySelector<HTMLButtonElement>('#hud-auto');
+  const buildButton = document.querySelector<HTMLButtonElement>('#hud-build');
   if (
     !canvas || !wrap || !drawerRoot || !modalRoot || !menuRoot ||
-    !titleButton || !cashLabel || !dayLabel
+    !titleButton || !cashLabel || !dayLabel || !autoButton || !buildButton
   ) {
     throw new Error('App shell is missing an expected element.');
   }
@@ -88,6 +91,8 @@ function start(): void {
   const title = titleButton;
   const cash = cashLabel;
   const dayText = dayLabel;
+  const auto = autoButton;
+  const build = buildButton;
 
   // A previous session's airport, or a new field if there is nothing to restore.
   const state = loadGame() ?? createGame(LEVEL_MEADOW, 42);
@@ -261,6 +266,32 @@ function start(): void {
     },
   }, DEFAULT_SPEED);
 
+  /*
+   * Auto-play: keep opening the airport until something wants looking at.
+   *
+   * The opening of a campaign has stretches where there is genuinely nothing to build for
+   * days, and tapping through them is not gameplay. `needsAttention()` decides when to hand
+   * control back — it is a pure function beside the advice it reads, so what the game
+   * considers a problem is one definition rather than two that can drift.
+   *
+   * It switches itself off whenever it stops, so the mode is never left running invisibly.
+   */
+  let autoPlay = false;
+
+  const paintAuto = (): void => {
+    auto.classList.toggle('is-on', autoPlay);
+    auto.setAttribute('aria-pressed', autoPlay ? 'true' : 'false');
+    auto.textContent = autoPlay ? '❚❚' : '▶';
+  };
+
+  /** Turns auto-play off, and says why if it stopped rather than being switched off. */
+  const stopAuto = (because?: string): void => {
+    if (!autoPlay) return;
+    autoPlay = false;
+    paintAuto();
+    if (because) report(`Paused — ${because}`);
+  };
+
   let dragFrom: TileIndex | null = null;
   let placement: Placement | null = null;
   /** False until the player pans or zooms; while false the map keeps re-fitting itself. */
@@ -432,6 +463,27 @@ function start(): void {
     const day = state.current;
     if (!day) return;
     const finalDay = state.day >= CAMPAIGN_DAYS;
+
+    /*
+     * While auto-play is running with nothing to report, the debrief is skipped entirely and
+     * the next day begins. So the debrief appears exactly when control is being handed back,
+     * which makes it worth reading rather than a tap to get past.
+     *
+     * The last day is never skipped: finishing the campaign is the one debrief that is the
+     * point of the thing.
+     */
+    const attention = needsAttention(state, day);
+    if (autoPlay && !finalDay && attention === null) {
+      state.day += 1;
+      state.phase = 'planning';
+      state.current = null;
+      saveGame(state);
+      showPlanning();
+      beginDay();
+      return;
+    }
+    stopAuto(attention ?? undefined);
+
     showDebrief(
       modalHost,
       day,
@@ -503,6 +555,38 @@ function start(): void {
     title.textContent = state.airport.map.name;
     dayText.textContent = `Day ${state.day}`;
   }
+
+  auto.addEventListener('click', () => {
+    if (autoPlay) {
+      autoPlay = false;
+      paintAuto();
+      return;
+    }
+    // Refuse to start with a problem already on the board, and say what it is — otherwise the
+    // button would appear to do nothing at all.
+    const attention = needsAttention(state, null);
+    if (state.phase === 'planning' && attention !== null) {
+      report(`Nothing to skip — ${attention}`);
+      return;
+    }
+    autoPlay = true;
+    paintAuto();
+    if (state.phase === 'planning') beginDay();
+  });
+
+  /*
+   * The way out of auto-play and into the drawer.
+   *
+   * Building only happens during planning, so mid-day this stops auto-play and the drawer
+   * opens when the day ends. Pressing it during planning opens the drawer there and then.
+   */
+  build.addEventListener('click', () => {
+    stopAuto();
+    if (state.phase === 'planning') {
+      showPlanning();
+      setExpanded(true);
+    }
+  });
 
   attachPointerControls(canvas, camera, {
     // Building is only possible while planning; during a day the map is a spectacle.

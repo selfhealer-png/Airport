@@ -12,7 +12,7 @@ import { terminalsOf, workingTerminalCapacity, workingTowerLevel } from './airpo
 import { structuralBlock } from './assignment';
 import { buildServices, type Services } from './connectivity';
 import { explainReason } from './step';
-import { STAND_RANK, type AircraftClassId, type GameState } from './types';
+import { STAND_RANK, type AircraftClassId, type DayState, type GameState } from './types';
 
 /**
  * Advice shown during planning.
@@ -398,6 +398,48 @@ export function expectedPassengers(state: GameState): number {
     (sum, arrival) => sum + aircraftClass(arrival.classId).passengers,
     0,
   );
+}
+
+/**
+ * Whether the airport wants the player's attention, and why.
+ *
+ * This is the whole of auto-play's judgement: it runs day after day while this returns null,
+ * and hands control back the moment it returns a reason. Kept here, pure and beside the
+ * advice it reads, so what the game considers "a problem" is one definition rather than two
+ * that can drift apart — and so it can be tested without a browser.
+ *
+ * Three things count, in the order a player would care about them:
+ *
+ * 1. Something was lost in the day just played. Whatever the cause, an aeroplane that did not
+ *    get down is worth looking at.
+ * 2. Tomorrow brings traffic this airport structurally cannot take — the runway is too short,
+ *    the surface too soft, no stand big enough, the licence not held. `structuralBlock` is the
+ *    same function the assignment pass uses, so this can never claim a problem the simulation
+ *    would not actually hit.
+ * 3. The advice panel has a warning. This is the broad net: an undersized terminal, buildings
+ *    with no road, a military strip standing idle. It will stop more often as the campaign
+ *    gets busy, which is the point — by then there usually *is* something worth doing.
+ *
+ * `lastDay` is optional so the check also works during planning, before any day has run.
+ */
+export function needsAttention(state: GameState, lastDay?: DayState | null): string | null {
+  if (lastDay) {
+    const lost = lastDay.events.filter((event) => event.outcome !== 'landed');
+    const first = lost[0];
+    if (first) {
+      return lost.length === 1
+        ? `An aeroplane was lost — ${explainReason(first.reason)}.`
+        : `${lost.length} aeroplanes were lost — ${explainReason(first.reason)}.`;
+    }
+  }
+
+  const blocked = tomorrowsTraffic(state).find((entry) => entry.problem);
+  if (blocked) {
+    return `${blocked.count}x ${blocked.name} booked in: ${blocked.problem}.`;
+  }
+
+  const warning = airportAdvice(state).find((item) => item.tone === 'warn');
+  return warning ? warning.text : null;
 }
 
 /** How busy the coming day is, for the planning HUD. */

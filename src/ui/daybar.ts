@@ -8,7 +8,12 @@ import type { DayState } from '@/sim/types';
  * four times per frame is the whole implementation.
  */
 
-export const SPEEDS = [1, 2, 4] as const;
+/*
+ * 8x exists for the quiet opening of a campaign, where there is nothing to build for days at
+ * a time. It is free: the loop is a fixed-step reducer, so a speed multiplier only runs
+ * `stepDay` more times per frame and cannot desynchronise from what the tests exercise.
+ */
+export const SPEEDS = [1, 2, 4, 8] as const;
 export type Speed = (typeof SPEEDS)[number];
 
 export interface DayBar {
