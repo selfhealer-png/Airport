@@ -23,6 +23,10 @@ tarmac is.
 What arrives is fixed by the day and the seed, so tomorrow is knowable today: you are being
 tested on your airport, never on your luck.
 
+The game opens on a menu. Levels unlock in order — finish one to reach the next — and you have
+one airport on the go at a time, so starting another level replaces it. Finishing a level is
+remembered separately, so that never costs you a map you have already earned.
+
 Two things cost money every day rather than once. Ground handling takes a slice of what each
 flight earns, so a bad day costs less than a good one. And an aerodrome licence — the size of
 aeroplane you are *cleared* to accept — is a standing daily fee whether one turns up or not,

@@ -410,6 +410,53 @@ reloading then is a pointless flash on a player's first visit.
 iOS still needs the app **fully dismissed from the app switcher**, not merely backgrounded — a
 resumed process never navigates, so nothing checks for a new worker.
 
+### Levels, and the menu
+
+The app opens on a menu, not a game. Levels unlock in a chain — `isUnlocked()` in
+`save/progress.ts` reads `LEVELS` order, first always open, each later one needing the one
+before it finished — and there is **one game at a time**, so choosing another level replaces
+the airport you had.
+
+That is why the unlock record lives on **its own storage key** (`airfield.progress.v1`) rather
+than inside the snapshot. Replacing a game, or tapping Start over, must never cost a level
+already earned. Anything that would discard a game asks twice, reusing the pattern Start over
+established.
+
+Switching level calls `restoreInto()` — the same mechanism undo uses, and for the same reason:
+the render loop, the pointer handlers and the drawer all closed over the original `GameState`,
+so swapping the object would leave them driving a game nobody can see. Two things go with it:
+`framed` must be reset so the new map re-fits, and `persist()` must not run while the menu is
+up or the autosave will resurrect a game the player has just abandoned.
+
+**Level terrain is authored as characters**, like sprite data — `g` grass, `w` water, `r` rock,
+`f` woods — and parsed by `terrainFrom()`, so a typo fails a test rather than producing a map
+with a hole in it. `tests/levels.test.ts` then asserts three invariants across *every* level:
+
+- terrain length matches the declared size;
+- at least one column has room for the longest runway in the game, or the campaign is
+  unwinnable on that map;
+- **all grass is one connected region.** This is the one that matters. `roadNetwork()` counts
+  only the single largest connected run of road, so a map whose obstacles split the buildable
+  ground in two would silently make one half useless — a runway there could be paid for and
+  never open, with nothing on screen to explain it. The check caught exactly this while
+  Bracken Rise was being drawn.
+
+Obstacles are permanent: `isBuildable()` refuses anything that is not grass. Paying to clear
+ground is a separate piece of work.
+
+**The day harness is meadow-only.** `scripts/run-day.ts` hardcodes column positions
+(`RUNWAY_X = 5`, `WEST_STAND_X = 8`, `STAND_ROWS`) that a map with obstacles in them would
+turn into nonsense, so Bracken Rise is **not** balance-checked by anything. Treat a new map as
+a new balance target rather than assuming it inherits the meadow's tuning — the campaign is
+already tuned against seed 42 on one map, and seeds 99 and 3 clear only 42% and 24% of their
+traffic even on the meadow.
+
+**Reaching a later level for testing:** five taps on the menu title unlocks everything, and the
+title then says so — `Airfield — all levels unlocked` — because a cheat that fires silently is
+a cheat you forget is on. "Reset everything" clears it like any other progress. It is a
+gesture rather than a URL parameter or a console call because the game is an installed PWA on
+a phone, where there is no address bar to type into and no console to call from.
+
 ### Saving
 
 `save/snapshot.ts` is pure: `toSnapshot` / `fromSnapshot` convert a `GameState` to plain JSON
@@ -586,8 +633,9 @@ Since then: reputation removed in favour of a fixed schedule path, helipads, poo
 capacity, and the sectioned build menu. On seed 42 the auto-player now clears fifty days losing
 42 aeroplanes of 499 — a 92% service level, no crashes at any point.
 
-Remaining: **levels 2+** actually using water, rock and woods (only `LEVEL_MEADOW` exists, and
-it is all grass), and a further balancing pass. Two known rough edges:
+Remaining: **water levels** (Bracken Rise uses rock and woods; nothing uses water yet, and it
+is the strongest constraint because roads cannot cross it), **terrain clearing costs**, and
+**scenarios**, which the menu already advertises as coming later. Two known rough edges:
 
 - The late campaign still **runs away, though less far**. Handling and certification take
   about 28% of gross and roughly halve the closing balance (£1.37M → £850k on seed 42), with
