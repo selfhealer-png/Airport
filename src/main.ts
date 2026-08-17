@@ -114,6 +114,9 @@ function start(): void {
   });
 
   const planningPanel = document.createElement('div');
+  // Named so the stylesheet can float the hint and the body above the bar without also
+  // catching the day bar, which replaces this panel in the same host while a day runs.
+  planningPanel.className = 'drawer-panel';
   const planningBar = document.createElement('div');
   planningBar.className = 'drawer-bar';
 

@@ -359,6 +359,30 @@ details:
   a long chip label in an `auto` track pushes the drawer *and the canvas beside it* past the
   viewport.
 
+### The drawer must never resize the map
+
+`#drawer` is a grid row, so anything that changes its height resizes `#map-wrap`, and a resize
+runs `relayout()`. Because `fitScale` snaps to whole device pixels, the rungs are far apart —
+on a 390x844 phone the map went from scale 1 with the drawer shut to **2/3** with it open, and
+back the instant a tool was armed and the drawer auto-collapsed. The map jumped a third of its
+size every time the player reached for something to build, and they could not pan it back,
+because arming a tool puts the map into build mode.
+
+So **only the bar takes up layout**. The hint and the expanding body are `position: absolute`
+against `.drawer-panel` and float above it, over the map. Two consequences to keep:
+
+- `#drawer` must **not** clip. It used to carry `max-height` + `overflow-y: auto` for its own
+  scrolling, which ate the floated children whole — they sit outside its box by design. The
+  bound and the scrolling belong on `.drawer-body`, the only part that can get tall, and that
+  is also the one place that opts back into `touch-action: pan-y` against the root's `none`.
+- The panel is classed `drawer-panel` rather than selected as `#drawer > div`, because the day
+  bar replaces it in the same host while a day runs and must not be floated.
+
+Verified by pixel-comparing the canvas across closed/open/armed: identical, so the camera
+provably does not move. Starting a day still changes the drawer's height by about 40px, since
+the day bar is taller than the planning bar — that is a single recentre at day start with no
+zoom change on a phone, and is left alone.
+
 ### Undo, and the collapsed drawer
 
 `save/history.ts` is undo for the planning phase. It stores **whole-state snapshots**, not

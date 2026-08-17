@@ -146,14 +146,63 @@ body {
  * the map down to a sliver, which is the one thing the player actually needs to see while
  * building.
  */
+/*
+ * Deliberately does NOT clip.
+ *
+ * It used to carry `max-height` and `overflow-y: auto` so its contents could scroll. That
+ * clipped the hint and body once they were floated above it — they sit outside this box by
+ * design, so `overflow` ate them and the drawer grew its own scrollbar instead. The bound and
+ * the scrolling moved onto `.drawer-body`, which is the only part that can get tall.
+ */
 #drawer {
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
   background: var(--panel);
   border-top: 1px solid var(--panel-edge);
+  overflow: visible;
+}
+
+/*
+ * Only the bar takes up layout; the hint and the expanding body float above it.
+ *
+ * This is load-bearing, and the bug it fixes was not subtle. `#drawer` is a grid row, so
+ * anything that changed its height resized `#map-wrap` — and both the hint and the body come
+ * and go constantly. `relayout()` then re-fitted the camera, and because `fitScale` snaps to
+ * whole device pixels the rungs are far apart: on a 390x844 phone the map went from scale 1
+ * with the drawer shut to 0.667 with it open, and back again the moment a tool was armed and
+ * the drawer auto-collapsed. The map visibly jumped a third of its size every time you
+ * reached for something to build, and you could not pan it back because arming a tool puts
+ * the map into build mode.
+ *
+ * Floating them keeps the map area constant, so no drawer state can move the camera at all.
+ * It also hands the map the height the hint used to occupy, which is what gets a phone onto
+ * scale 1 rather than 2/3.
+ */
+.drawer-panel {
+  position: relative;
+}
+
+.drawer-panel > .drawer-hint,
+.drawer-panel > .drawer-body {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  /* Bounded and scrollable: the body is unbounded in principle — one upgrade button per
+     terminal — and must never run off the top of the screen. */
   max-height: 60dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* The root sets `touch-action: none` so the game owns every gesture; this is the one place
+     that has to opt back in, or a long build menu cannot be scrolled with a thumb. */
   touch-action: pan-y;
+  background: var(--panel);
+}
+
+/* The bar keeps the panel's own background; the floating parts need their own, since they
+   now sit over the map rather than over the drawer. */
+.drawer-panel > .drawer-hint {
+  margin-bottom: 8px;
+  background: rgba(232, 180, 74, 0.14);
 }
 
 /* The always-visible row: build, undo, and the one button that starts the day. */
