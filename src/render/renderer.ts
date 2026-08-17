@@ -1,7 +1,7 @@
 import { TILE_PX, PALETTE } from '@/sprites/palette';
 import type { SpriteAtlas } from '@/sprites/atlas';
 import type { SpriteName } from '@/sprites/data';
-import type { Airport, GameState, Runway, Terrain, TileIndex } from '@/sim/types';
+import type { Airport, GameState, LevelMap, Runway, Terrain, TileIndex } from '@/sim/types';
 import { aircraftViews } from './aircraft';
 import { clampCamera, deviceRatio, type Camera } from './camera';
 
@@ -179,14 +179,26 @@ export class Renderer {
     const onScreen = (tx: number, ty: number): boolean =>
       tx >= firstX && tx <= lastX && ty >= firstY && ty <= lastY;
 
-    // 1. Terrain.
+    // 1. Terrain. Felled woods are drawn as the grass they became; water and rock keep their
+    //    own tile and take a structure on top in the pass below.
+    const worked = (tx: number, ty: number): boolean =>
+      tx >= 0 &&
+      ty >= 0 &&
+      tx < map.width &&
+      ty < map.height &&
+      airport.groundworks[ty * map.width + tx] === 1;
+
     for (let ty = firstY; ty <= lastY; ty++) {
       for (let tx = firstX; tx <= lastX; tx++) {
         const terrain = map.terrain[ty * map.width + tx];
         if (terrain === undefined) continue;
-        put(terrainSprite(terrain, tx, ty), tx, ty);
+        const felled = terrain === 'woods' && worked(tx, ty);
+        put(terrainSprite(felled ? 'grass' : terrain, tx, ty), tx, ty);
       }
     }
+
+    // 1b. Groundworks.
+    this.drawGroundworks(map, worked, firstX, firstY, lastX, lastY, screenX, screenY);
 
     // 2. Roads, then taxiways over them — a crossing should read as the aeroplane having
     //    priority, which is also how it works on a real airfield.
@@ -308,6 +320,85 @@ export class Renderer {
    * corner, tee and crossroads would be sixteen grids to keep in step, and the same routine
    * serves any future surface that has to join up tile to tile.
    */
+  /**
+   * Draws what the groundworks bought, which is three different things from one mask.
+   *
+   * A player who cannot see what they paid for will pay for it twice, and the three cases are
+   * not interchangeable — a bridge takes a taxiway and a tunnel does not — so they must be
+   * told apart at a glance rather than by memory of where the drag went.
+   *
+   * Felled woods need nothing here: they are already drawn as grass, and stumps say the
+   * rest. Bridges and tunnels are drawn to their *neighbour's* edge wherever the run
+   * continues, so a causeway reads as one structure instead of a row of tiles — the same
+   * joining rule as `drawGuideLines()`, and the same reason: authoring the sixteen
+   * straight/corner/tee/crossroads combinations would be sixteen grids to keep in step.
+   */
+  private drawGroundworks(
+    map: LevelMap,
+    worked: (tx: number, ty: number) => boolean,
+    firstX: number,
+    firstY: number,
+    lastX: number,
+    lastY: number,
+    screenX: (tx: number) => number,
+    screenY: (ty: number) => number,
+  ): void {
+    const { ctx } = this;
+
+    for (let ty = firstY; ty <= lastY; ty++) {
+      for (let tx = firstX; tx <= lastX; tx++) {
+        if (!worked(tx, ty)) continue;
+        const terrain = map.terrain[ty * map.width + tx];
+        if (terrain === undefined || terrain === 'grass') continue;
+
+        const left = screenX(tx);
+        const top = screenY(ty);
+        const right = screenX(tx + 1);
+        const bottom = screenY(ty + 1);
+        const w = right - left;
+        const h = bottom - top;
+
+        if (terrain === 'woods') {
+          // Stumps, so felled ground reads as *worked* grass rather than as ground that was
+          // always clear — otherwise the player cannot tell what they have already paid for.
+          ctx.fillStyle = PALETTE.T;
+          const r = Math.max(1, w * 0.14);
+          ctx.fillRect(left + w * 0.22, top + h * 0.3, r, r);
+          ctx.fillRect(left + w * 0.6, top + h * 0.55, r, r);
+          continue;
+        }
+
+        // A run continues into any neighbour that is worked and the same terrain, so the
+        // structure is drawn all the way to that neighbour's edge and the two meet exactly.
+        const same = (nx: number, ny: number): boolean =>
+          worked(nx, ny) && map.terrain[ny * map.width + nx] === terrain;
+        const inset = Math.max(1, Math.min(w, h) * 0.18);
+        const x0 = same(tx - 1, ty) ? left : left + inset;
+        const x1 = same(tx + 1, ty) ? right : right - inset;
+        const y0 = same(tx, ty - 1) ? top : top + inset;
+        const y1 = same(tx, ty + 1) ? bottom : bottom - inset;
+
+        if (terrain === 'water') {
+          // Decking: timber over the water, with planks across it.
+          ctx.fillStyle = PALETTE.d;
+          ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+          ctx.fillStyle = PALETTE.D;
+          const planks = 3;
+          for (let i = 1; i < planks; i++) {
+            const y = y0 + ((y1 - y0) * i) / planks;
+            ctx.fillRect(x0, y, x1 - x0, Math.max(1, h * 0.06));
+          }
+        } else {
+          // A tunnel mouth: a cut through the rock, dark because it is a hole.
+          ctx.fillStyle = PALETTE.s;
+          ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+          ctx.fillStyle = PALETTE.R;
+          ctx.fillRect(x0, y0, x1 - x0, Math.max(1, h * 0.12));
+        }
+      }
+    }
+  }
+
   private drawLines(
     airport: Airport,
     layer: 'taxiways' | 'roads',

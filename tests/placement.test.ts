@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { LEVEL_MEADOW } from '@/content/levels';
-import { RUNWAY_COST_PER_TILE } from '@/content/costs';
+import { LEVEL_BRACKEN_RISE, LEVEL_MEADOW } from '@/content/levels';
+import { GROUNDWORK_COST, RUNWAY_COST_PER_TILE } from '@/content/costs';
 import { createGame, towerLevelOf } from '@/sim/airport';
 import { isAffordableQuote, occupantAt } from '@/sim/build';
-import { commitPlacement, resolvePlacement, type Tool } from '@/ui/placement';
+import { commitPlacement, isLineTool, resolvePlacement, type Tool } from '@/ui/placement';
 import { runwayLength, type GameState } from '@/sim/types';
 
 /**
@@ -149,5 +149,29 @@ describe('single-tile tools', () => {
 
     expect(placement.check).toBe('nothing-there');
     expect(commitPlacement(state, demolish, placement)).toBe(false);
+  });
+});
+
+describe('dragging out groundworks', () => {
+  it('works a run of woods and prices it per tile', () => {
+    const state = createGame(LEVEL_BRACKEN_RISE, 1);
+    state.cash = 100_000;
+    // A column that is woods for its whole length on Bracken Rise, so the price is the
+    // felling rate times four with nothing else mixed in.
+    const placement = drag(state, { kind: 'clear' }, [15, 30], [15, 33]);
+    expect(isAffordableQuote(placement.check) && placement.check.cost).toBe(4 * GROUNDWORK_COST.woods);
+    expect(placement.tiles).toHaveLength(4);
+  });
+
+  it('drags on an axis like a road rather than diagonally', () => {
+    // Same gesture as the other line tools: the thumb should not have to learn it twice.
+    const state = createGame(LEVEL_BRACKEN_RISE, 1);
+    state.cash = 100_000;
+    const placement = drag(state, { kind: 'clear' }, [17, 30], [19, 33]);
+    expect(new Set(placement.tiles.map((t) => t.x)).size).toBe(1);
+  });
+
+  it('counts as a line tool, so the drag is previewed before it is priced', () => {
+    expect(isLineTool({ kind: 'clear' })).toBe(true);
   });
 });

@@ -20,7 +20,7 @@ import type {
  * whole aircraft state machine.
  */
 
-export const SNAPSHOT_VERSION = 7;
+export const SNAPSHOT_VERSION = 8;
 
 export interface Snapshot {
   readonly version: number;
@@ -49,6 +49,13 @@ export interface Snapshot {
   readonly taxiways: readonly number[];
   /** Row-major tile indices that carry road, stored the same way. */
   readonly roads: readonly number[];
+  /**
+   * Row-major tile indices where the ground has been worked, stored the same way.
+   *
+   * What the work bought is not stored: it is read from the level's terrain, so a save
+   * cannot disagree with the map about whether a tile is a bridge or a felled wood.
+   */
+  readonly groundworks: readonly number[];
   readonly facilities: ReadonlyArray<{
     id: string;
     type: FacilityType;
@@ -69,6 +76,11 @@ export function toSnapshot(state: GameState): Snapshot {
   const roads: number[] = [];
   for (let i = 0; i < airport.roads.length; i++) {
     if (airport.roads[i] === 1) roads.push(i);
+  }
+
+  const groundworks: number[] = [];
+  for (let i = 0; i < airport.groundworks.length; i++) {
+    if (airport.groundworks[i] === 1) groundworks.push(i);
   }
 
   return {
@@ -95,6 +107,7 @@ export function toSnapshot(state: GameState): Snapshot {
     helipads: airport.helipads.map((h) => ({ id: h.id, x: h.x, y: h.y })),
     taxiways,
     roads,
+    groundworks,
     facilities: airport.facilities.map((f) => ({
       id: f.id,
       type: f.type,
@@ -174,6 +187,12 @@ export function fromSnapshot(raw: unknown): GameState | null {
   for (const index of data.roads ?? []) {
     if (Number.isInteger(index) && index >= 0 && index < airport.roads.length) {
       airport.roads[index] = 1;
+    }
+  }
+
+  for (const index of data.groundworks ?? []) {
+    if (Number.isInteger(index) && index >= 0 && index < airport.groundworks.length) {
+      airport.groundworks[index] = 1;
     }
   }
 

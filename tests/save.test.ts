@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { LEVEL_MEADOW } from '@/content/levels';
+import { LEVEL_BRACKEN_RISE, LEVEL_MEADOW } from '@/content/levels';
 import {
+  addGroundwork,
   addHelipad,
   addRunway,
   addStand,
   addTaxiwayRun,
   createGame,
+  hasGroundwork,
   towerLevelOf,
 } from '@/sim/airport';
 import { occupantAt } from '@/sim/build';
@@ -176,5 +178,31 @@ describe('bad saves', () => {
     expect(restored).not.toBeNull();
     expect(restored!.airport.stands).toHaveLength(1);
     expect(restored!.airport.stands[0]!.id).toBe('std2');
+  });
+});
+
+describe('groundworks survive a reload', () => {
+  it('restores worked ground exactly', () => {
+    // Only the *fact* of the work is stored. What it bought is read back from the level's
+    // terrain, so a save can never disagree with the map about whether a tile is a bridge or
+    // a felled wood.
+    const state = createGame(LEVEL_BRACKEN_RISE, 3);
+    state.cash = 500_000;
+    addGroundwork(state.airport, 4, 5);
+    addGroundwork(state.airport, 4, 6);
+
+    const restored = fromSnapshot(JSON.parse(JSON.stringify(toSnapshot(state))));
+    expect(restored).not.toBeNull();
+    expect(hasGroundwork(restored!.airport, 4, 5)).toBe(true);
+    expect(hasGroundwork(restored!.airport, 4, 6)).toBe(true);
+    expect(hasGroundwork(restored!.airport, 4, 7)).toBe(false);
+  });
+
+  it('drops worked tiles that fall outside the map', () => {
+    // Same forgiveness as every other entity: one bad index loses a tile, not the save.
+    const snapshot = { ...toSnapshot(builtGame()), groundworks: [-1, 999_999, 5] };
+    const restored = fromSnapshot(snapshot);
+    expect(restored).not.toBeNull();
+    expect(restored!.airport.groundworks[5]).toBe(1);
   });
 });

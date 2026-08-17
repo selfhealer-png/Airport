@@ -10,6 +10,7 @@ import {
   MILITARY_RUNWAY_PREMIUM,
   LEVELLED_FACILITIES,
   MIN_RUNWAY_TILES,
+  GROUNDWORK_COST,
   ROAD_COST_PER_TILE,
   RUNWAY_COST_PER_TILE,
   STAND_COST,
@@ -69,7 +70,7 @@ function chipSections(): ChipSection[] {
 
   return [
     { title: 'Runways', chips: pick('runway-grass', 'runway-gravel', 'runway-asphalt', 'runway-military') },
-    { title: 'Taxiways & roads', chips: pick('taxiway', 'road') },
+    { title: 'Taxiways & roads', chips: pick('taxiway', 'road', 'clear') },
     { title: 'Stands', chips: pick('stand-small', 'stand-medium', 'stand-large') },
     // Its own section rather than bolted onto Stands: a pad is not sized the way stands are,
     // and it is a runway as much as it is a stand.
@@ -122,6 +123,15 @@ function allChips(): ToolChip[] {
       label: 'Road',
       hint: `£${ROAD_COST_PER_TILE}/tile`,
       tool: { kind: 'road' },
+    },
+    {
+      id: 'clear',
+      label: 'Groundworks',
+      // A range rather than three named prices: the chip does three jobs and which one it
+      // does is decided by the tile, not the player, so what matters at a glance is that the
+      // cost varies. The exact figure lands in the status line as the drag is priced.
+      hint: `£${GROUNDWORK_COST.woods}–£${GROUNDWORK_COST.rock.toLocaleString()}/tile`,
+      tool: { kind: 'clear' },
     },
     {
       id: 'stand-small',
@@ -509,6 +519,10 @@ function minimumCost(chip: ToolChip): number {
       return TAXIWAY_COST_PER_TILE;
     case 'road':
       return ROAD_COST_PER_TILE;
+    // The cheapest thing groundworks can be: one tile of woods. Anything dearer depends on
+    // what the drag crosses, which this cannot know.
+    case 'clear':
+      return GROUNDWORK_COST.woods;
     case 'stand':
       return STAND_COST[chip.tool.size];
     case 'helipad':

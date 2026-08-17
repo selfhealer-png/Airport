@@ -692,6 +692,12 @@ function start(): void {
         if (before) history.push(before);
         drawer.refresh(state);
         updateHud();
+        // `paintShell` is what enables the Undo chip, and nothing else here calls it — so
+        // until now Undo stayed greyed out after a build and only woke up when the drawer
+        // was toggled or the day turned. That is the one moment it is most wanted, and it
+        // matters more since groundworks arrived: felling and bridging refund nothing, so
+        // undo is the only way back from a misplaced tunnel.
+        paintShell();
         report(tool.kind === 'demolish' ? 'Removed.' : 'Built.');
         saveGame(state);
       } else if (placement) {

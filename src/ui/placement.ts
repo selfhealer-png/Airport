@@ -1,4 +1,5 @@
 import {
+  applyClearRun,
   applyDemolish,
   applyFacility,
   applyGrowRunway,
@@ -7,6 +8,7 @@ import {
   applyRunway,
   applyStand,
   applyTaxiwayRun,
+  checkClearRun,
   checkDemolish,
   checkFacility,
   checkGrowRunway,
@@ -40,6 +42,13 @@ export type Tool =
   | { readonly kind: 'runway'; readonly surface: RunwaySurface; readonly use: RunwayUse }
   | { readonly kind: 'taxiway' }
   | { readonly kind: 'road' }
+  /**
+   * Working the ground: felling, bridging or tunnelling, whichever the tile calls for.
+   *
+   * One tool rather than three because the player's decision is "get this out of my way", and
+   * the price is read per tile from what is underneath — see `checkClearRun`.
+   */
+  | { readonly kind: 'clear' }
   | { readonly kind: 'stand'; readonly size: StandSize }
   /** One tile, no size: a pad is a runway and a stand at once. */
   | { readonly kind: 'helipad' }
@@ -68,7 +77,12 @@ export interface Placement {
  * disagree about which tools need a drag at all.
  */
 export function isLineTool(tool: Tool): boolean {
-  return tool.kind === 'runway' || tool.kind === 'taxiway' || tool.kind === 'road';
+  return (
+    tool.kind === 'runway' ||
+    tool.kind === 'taxiway' ||
+    tool.kind === 'road' ||
+    tool.kind === 'clear'
+  );
 }
 
 function line(from: TileIndex, to: TileIndex): TileIndex[] {
@@ -127,15 +141,19 @@ export function resolvePlacement(
     }
 
     case 'taxiway':
-    case 'road': {
-      // Snap to whichever axis the player has moved further along. Roads drag exactly like
-      // taxiways on purpose: same gesture, so the thumb does not have to learn twice.
+    case 'road':
+    case 'clear': {
+      // Snap to whichever axis the player has moved further along. Roads and groundworks drag
+      // exactly like taxiways on purpose: same gesture, so the thumb does not have to learn
+      // it three times.
       const horizontal = Math.abs(to.x - from.x) >= Math.abs(to.y - from.y);
       const end: TileIndex = horizontal ? { x: to.x, y: from.y } : { x: from.x, y: to.y };
       const check =
         tool.kind === 'taxiway'
           ? checkTaxiwayRun(state, from.x, from.y, end.x, end.y)
-          : checkRoadRun(state, from.x, from.y, end.x, end.y);
+          : tool.kind === 'road'
+            ? checkRoadRun(state, from.x, from.y, end.x, end.y)
+            : checkClearRun(state, from.x, from.y, end.x, end.y);
       return { tiles: line(from, end), check };
     }
 
@@ -178,6 +196,9 @@ export function commitPlacement(state: GameState, tool: Tool, placement: Placeme
       return true;
     case 'road':
       applyRoadRun(state, check, first.x, first.y, last.x, last.y);
+      return true;
+    case 'clear':
+      applyClearRun(state, check, first.x, first.y, last.x, last.y);
       return true;
     case 'stand':
       applyStand(state, check, last.x, last.y, tool.size);
