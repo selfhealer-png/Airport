@@ -133,16 +133,34 @@ function elbow(
 }
 
 /**
+ * How far apart consecutive aircraft sit around the holding ellipse.
+ *
+ * The golden angle, because the spacing has to come from the aircraft's own id rather than
+ * its position in a list. Ids are consecutive, and stepping by the golden angle spreads any
+ * run of them evenly around a circle without ever repeating.
+ */
+const HOLD_SPREAD = Math.PI * (3 - Math.sqrt(5));
+
+/**
  * Holding aircraft orbit above the field.
  *
- * They are spread around an ellipse by arrival order and pushed onto wider rings as the
- * stack fills, so a congested tower looks congested — that is the player's cue that the
- * stack, rather than the runway, is the thing to fix.
+ * They are spread around an ellipse and pushed onto wider rings as the stack fills, so a
+ * congested tower looks congested — that is the player's cue that the stack, rather than the
+ * runway, is the thing to fix.
+ *
+ * Keyed on the aircraft's **id**, never on its index in the holding list. Index-based
+ * placement looked identical in a screenshot and was visibly wrong in motion: the moment any
+ * aircraft left the stack, every later one inherited a new index and jumped to a different
+ * ring and a different angle. Ids do not shift, so an aeroplane's orbit is its own.
+ *
+ * It is also a pure function of `(id, elapsed)`, which is what lets the approach below work
+ * out where an aeroplane *was* when it was released, without the simulation storing a
+ * position it is not allowed to have.
  */
-function holdingPosition(airport: Airport, index: number, count: number, elapsed: number): Placed {
-  const ring = index % 3;
+function holdingPosition(airport: Airport, id: number, elapsed: number): Placed {
+  const ring = id % 3;
   const radius = (2.6 + ring * 1.4) * TILE_PX;
-  const angle = elapsed * 0.5 + (index / Math.max(count, 1)) * Math.PI * 2;
+  const angle = elapsed * 0.5 + id * HOLD_SPREAD;
 
   return {
     x: centre(airport.map.width / 2) + Math.cos(angle) * radius * 1.5,
@@ -150,6 +168,28 @@ function holdingPosition(airport: Airport, index: number, count: number, elapsed
     // Velocity of (cos, sin) is (-sin, cos): a positive cosine means heading south.
     rotation: Math.cos(angle) > 0 ? 2 : 0,
   };
+}
+
+/** A point on a quadratic curve, and the direction it is travelling there. */
+function quadratic(
+  from: { x: number; y: number },
+  control: { x: number; y: number },
+  to: { x: number; y: number },
+  t: number,
+): Placed {
+  const u = 1 - t;
+  const x = u * u * from.x + 2 * u * t * control.x + t * t * to.x;
+  const y = u * u * from.y + 2 * u * t * control.y + t * t * to.y;
+
+  // Tangent of the same curve, quantised to a quarter turn — the only rotation that keeps the
+  // pixel grid intact, so the aeroplane visibly turns onto final rather than sliding sideways.
+  const dx = 2 * u * (control.x - from.x) + 2 * t * (to.x - control.x);
+  const dy = 2 * u * (control.y - from.y) + 2 * t * (to.y - control.y);
+  let rotation: Quarter = 2;
+  if (Math.abs(dx) > Math.abs(dy)) rotation = dx > 0 ? 1 : 3;
+  else if (dy !== 0) rotation = dy > 0 ? 2 : 0;
+
+  return { x, y, rotation };
 }
 
 /** Where an aircraft leaves or rejoins the runway: the far threshold it rolls out to. */
@@ -171,7 +211,6 @@ const padAt = (pad: Helipad): { x: number; y: number } => ({
 /** Builds a drawable view for every aircraft that is currently somewhere on the airfield. */
 export function aircraftViews(airport: Airport, day: DayState): AircraftView[] {
   const views: AircraftView[] = [];
-  const holding = day.aircraft.filter((a) => a.phase === 'holding');
 
   for (const aircraft of day.aircraft) {
     const spec = aircraftClass(aircraft.classId);
@@ -198,8 +237,7 @@ export function aircraftViews(airport: Airport, day: DayState): AircraftView[] {
 
     switch (aircraft.phase) {
       case 'holding': {
-        const index = holding.indexOf(aircraft);
-        push(holdingPosition(airport, index, holding.length, day.elapsed), 1, {
+        push(holdingPosition(airport, aircraft.id, day.elapsed), 1, {
           fuelFraction: Math.max(0, aircraft.fuel / spec.endurance),
         });
         break;
@@ -216,14 +254,28 @@ export function aircraftViews(airport: Airport, day: DayState): AircraftView[] {
           break;
         }
         if (!runway) break;
-        // Descends from off the top of the field onto the threshold, shadow closing in.
+
+        /*
+         * Peels out of the hold and turns onto final, rather than cutting to a point above
+         * the threshold.
+         *
+         * The old version started every approach at a fixed spot nine tiles above the runway,
+         * so an aeroplane vanished from its orbit and reappeared already lined up. The start
+         * point is recovered instead: `holdingPosition` is a pure function of `(id, elapsed)`,
+         * and the aircraft has been on approach for `approachSeconds - timer`, so evaluating
+         * it at that earlier moment gives exactly where it left the stack. Nothing is stored,
+         * and `sim/` still knows nothing about position.
+         *
+         * The control point sits above the threshold at the orbit's height, which makes the
+         * curve leave the hold heading for the runway column and arrive descending straight
+         * down the centreline. `approachSeconds` is untouched, so this costs the day nothing.
+         */
         const t = progress(aircraft, spec.approachSeconds);
+        const releasedAt = day.elapsed - (spec.approachSeconds - aircraft.timer);
+        const from = holdingPosition(airport, aircraft.id, releasedAt);
+        const threshold = { x: centre(runway.x), y: centre(runway.y0) };
         push(
-          {
-            x: centre(runway.x),
-            y: lerp(centre(runway.y0 - 9), centre(runway.y0), t),
-            rotation: 2,
-          },
+          quadratic(from, { x: threshold.x, y: from.y }, threshold, t),
           lerp(1, 0.08, t),
         );
         break;
