@@ -57,7 +57,8 @@ export type BuildError =
   | 'no-shop-slot'
   | 'needs-terminal'
   | 'no-change'
-  | 'use-mismatch';
+  | 'use-mismatch'
+  | 'nothing-to-clear';
 
 export interface BuildQuote {
   readonly cost: number;
@@ -308,6 +309,77 @@ export function checkRoadRun(
   if (tiles === 0) return 'occupied';
 
   return afford(state, tiles * ROAD_COST_PER_TILE);
+}
+
+// --- Groundworks -------------------------------------------------------------------------
+
+/**
+ * Working a straight run of ground: felling woods, bridging water, tunnelling rock.
+ *
+ * One operation for all three because to the player it is one gesture — drag across what is
+ * in the way — and the price is read per tile from what is actually underneath. A drag over a
+ * wooded slope onto rock is therefore quoted correctly rather than at some blended rate, and
+ * a single chip can serve the whole job.
+ *
+ * Grass in the run costs nothing and is skipped rather than refused, the same forgiveness
+ * `checkGrowRunway` shows a drag along an already-paved strip: the tiles with nothing to do
+ * must not spoil the drag. What is refused is a run with nothing to do *anywhere*, which is a
+ * slip of the thumb rather than a purchase.
+ *
+ * Occupancy is not checked. There is nothing on an unworked obstacle to be occupied by, and
+ * ground already worked is skipped before the question arises.
+ */
+export function checkClearRun(
+  state: GameState,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): BuildCheck {
+  if (x0 !== x1 && y0 !== y1) return 'not-straight';
+
+  const { airport } = state;
+  const stepX = Math.sign(x1 - x0);
+  const stepY = Math.sign(y1 - y0);
+  const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+
+  let cost = 0;
+  let tiles = 0;
+  for (let i = 0; i <= steps; i++) {
+    const x = x0 + stepX * i;
+    const y = y0 + stepY * i;
+    const terrain = terrainAt(airport.map, x, y);
+    if (terrain === undefined) return 'off-map';
+    if (terrain === 'grass' || hasGroundwork(airport, x, y)) continue;
+    cost += GROUNDWORK_COST[terrain];
+    tiles++;
+  }
+  if (tiles === 0) return 'nothing-to-clear';
+
+  return afford(state, cost);
+}
+
+export function applyClearRun(
+  state: GameState,
+  quote: BuildQuote,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): void {
+  const { airport } = state;
+  spend(state, quote);
+
+  const stepX = Math.sign(x1 - x0);
+  const stepY = Math.sign(y1 - y0);
+  const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+
+  for (let i = 0; i <= steps; i++) {
+    const x = x0 + stepX * i;
+    const y = y0 + stepY * i;
+    if (terrainAt(airport.map, x, y) === 'grass') continue;
+    addGroundwork(airport, x, y);
+  }
 }
 
 export function checkStand(state: GameState, x: number, y: number, size: StandSize): BuildCheck {
@@ -625,7 +697,14 @@ export function applySurrenderCertification(state: GameState, quote: BuildQuote)
 
 // --- Demolition --------------------------------------------------------------------------
 
-/** What removing whatever is on this tile would return, or why it cannot be removed. */
+/**
+ * What removing whatever is on this tile would return, or why it cannot be removed.
+ *
+ * Groundworks are deliberately absent from every branch below. Nothing un-fells a wood or
+ * un-builds a bridge, so bare worked ground reports `nothing-there` and demolishing the road
+ * that crosses a tunnel refunds the road alone. Undo still covers a slip of the thumb,
+ * because it restores whole snapshots rather than inverting operations.
+ */
 export function checkDemolish(state: GameState, x: number, y: number): BuildCheck {
   const { airport } = state;
 
@@ -736,6 +815,8 @@ export function explainBuildError(error: BuildError): string {
       return 'Shops must be built touching the terminal';
     case 'no-change':
       return 'Already this long and this well surfaced';
+    case 'nothing-to-clear':
+      return 'There is nothing to clear there.';
     case 'use-mismatch':
       return 'Military and civil runways cannot be merged';
   }
