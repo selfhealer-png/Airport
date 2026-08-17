@@ -360,6 +360,11 @@ function start(): void {
     framed = false;
     relayout();
 
+    // Stepping stops the moment `inMenu` goes true, so this is normally near zero already —
+    // but a stale fractional-day's worth of accumulated time must never carry into a day that
+    // has not started yet, restored or otherwise.
+    accumulator = 0;
+
     inMenu = false;
     menuHost.hidden = true;
     saveGame(state);
@@ -517,7 +522,10 @@ function start(): void {
 
     const phase = (): GamePhase => state.phase;
 
-    if (phase() === 'day' && !paused) {
+    // The menu covers the map, so stepping behind it is work nobody can see — and if a day
+    // finished while it was up, `finishDay()` would fire every frame against a `#modal` the
+    // menu occludes, raising a debrief nothing can ever dismiss.
+    if (phase() === 'day' && !paused && !inMenu) {
       // Fixed-step: the speed multiplier just runs the reducer more times per frame, which
       // is why 4x cannot desynchronise the simulation from what the tests exercise.
       accumulator += elapsed * speed;
