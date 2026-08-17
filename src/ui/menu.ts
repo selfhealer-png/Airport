@@ -10,6 +10,10 @@ import type { LevelMap } from '@/sim/types';
  * `ui/placement.ts` keeps drag behaviour testable.
  */
 
+/** Taps on the title that unlock every level, and how long the run may stall before it lapses. */
+const TITLE_TAPS_TO_UNLOCK = 5;
+const SUBTITLE = 'Build the airport so the aeroplanes can land.';
+
 export type MenuRowState = 'locked' | 'start' | 'continue' | 'replay';
 
 export interface CurrentGame {
@@ -133,7 +137,9 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
    * rather than an accumulator that five stray taps could fill over an entire session, spread
    * across multiple visits to the menu.
    */
-  const TITLE_TAP_LAPSE_MS = 2000;
+  // Generous: a deliberate run of taps is well inside this, and five stray ones spread across
+  // a session still cannot accumulate.
+  const TITLE_TAP_LAPSE_MS = 3000;
   let titleTaps = 0;
   let titleTapTimer: ReturnType<typeof setTimeout> | null = null;
   let unlocked = false;
@@ -155,28 +161,45 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
     const panel = document.createElement('div');
     panel.className = 'menu-panel';
 
+    // Declared up here because the title's tap handler counts down into it.
+    const sub = document.createElement('p');
+
     const title = document.createElement('h1');
     title.className = 'menu-title';
-    title.textContent = unlocked ? 'Airfield — all levels unlocked' : 'Airfield';
-    title.addEventListener('click', () => {
+    // A real button inside the heading: iOS Safari does not reliably fire click on plain
+    // elements, so a bare `<h1>` listener made this gesture dead on the one platform it is for.
+    const titleTap = document.createElement('button');
+    titleTap.type = 'button';
+    titleTap.className = 'menu-title-tap';
+    titleTap.textContent = unlocked ? 'Airfield — all levels unlocked' : 'Airfield';
+    title.append(titleTap);
+    titleTap.addEventListener('click', () => {
       if (titleTapTimer) clearTimeout(titleTapTimer);
       titleTaps += 1;
-      if (titleTaps < 5) {
+
+      if (titleTaps < TITLE_TAPS_TO_UNLOCK) {
+        // Counts down out loud once it is clearly deliberate. A hidden gesture that gives no
+        // sign of registering is indistinguishable from a broken one — which is exactly how
+        // this first got reported.
+        const left = TITLE_TAPS_TO_UNLOCK - titleTaps;
+        if (titleTaps >= 2) sub.textContent = `${left} more tap${left === 1 ? '' : 's'} to unlock every level`;
         titleTapTimer = setTimeout(() => {
           titleTaps = 0;
           titleTapTimer = null;
+          sub.textContent = SUBTITLE;
         }, TITLE_TAP_LAPSE_MS);
         return;
       }
+
       titleTaps = 0;
       titleTapTimer = null;
       unlocked = true;
+      titleTap.textContent = 'Airfield — all levels unlocked';
       handlers.onUnlockAll();
     });
 
-    const sub = document.createElement('p');
     sub.className = 'menu-sub';
-    sub.textContent = 'Build the airport so the aeroplanes can land.';
+    sub.textContent = SUBTITLE;
 
     const levelsHeading = document.createElement('p');
     levelsHeading.className = 'menu-heading';

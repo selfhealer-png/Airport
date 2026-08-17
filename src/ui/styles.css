@@ -508,7 +508,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  /* Same trap as the menu: a debrief tall enough to fill the screen would otherwise run its
+     first line under the status bar. */
+  padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
   background: rgba(9, 16, 20, 0.72);
 }
 
@@ -781,12 +783,18 @@ body {
 
 /* --- Menu ------------------------------------------------------------------------------ */
 
+/*
+ * The top inset is not optional. `#hud` has always carried it, but the menu did not — so on a
+ * notched phone in standalone mode the title sat underneath the system clock, and taps in that
+ * strip go to iOS rather than the page. The hidden unlock gesture on the title was therefore
+ * unreachable on the exact device it exists for.
+ */
 #menu {
   position: fixed;
   inset: 0;
   z-index: 10;
   overflow-y: auto;
-  padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+  padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
   background: var(--bg);
 }
 
@@ -799,6 +807,27 @@ body {
 .menu-title {
   margin: 0 0 4px;
   font-size: 24px;
+}
+
+/*
+ * The title is a real `<button>` inside the heading, not a bare `<h1>` with a listener.
+ *
+ * iOS Safari does not reliably fire click on non-interactive elements, so the five-tap unlock
+ * gesture simply did nothing there — the one platform it was built for. A button is tappable
+ * by construction. It keeps the heading's own styling so nothing looks like a control.
+ */
+.menu-title-tap {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  /* Belt and braces with the button: `cursor: pointer` is the other half of the same iOS
+     quirk, and costs nothing on a phone. */
+  cursor: pointer;
 }
 
 .menu-sub {
