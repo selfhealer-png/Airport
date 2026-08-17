@@ -47,6 +47,15 @@ function surfaceSprite(runway: Runway): SpriteName {
 export interface BuildPreview {
   readonly tiles: readonly TileIndex[];
   readonly valid: boolean;
+  /**
+   * The crosshair, in CSS pixels relative to the canvas. Absent when no finger is down.
+   *
+   * Drawn where the game is *aiming*, which is above the fingertip rather than under it. Two
+   * cues together: the tiles snap, so you can count them, and the crosshair moves
+   * continuously, so you can steer. Neither alone is enough on a phone — snapped-only feels
+   * unresponsive, continuous-only leaves you guessing which tile you are on.
+   */
+  readonly aim?: { readonly x: number; readonly y: number };
 }
 
 export interface Viewport {
@@ -237,14 +246,57 @@ export class Renderer {
 
     // 6. The build being dragged out, tinted by whether it is legal.
     if (preview) {
+      const tint = preview.valid ? PALETTE.t : PALETTE.n;
+
       ctx.globalAlpha = 0.45;
-      ctx.fillStyle = preview.valid ? PALETTE.t : PALETTE.n;
+      ctx.fillStyle = tint;
       for (const tile of preview.tiles) {
         const left = screenX(tile.x);
         const top = screenY(tile.y);
         ctx.fillRect(left, top, screenX(tile.x + 1) - left, screenY(tile.y + 1) - top);
       }
+
+      /*
+       * Outlined as well as filled. A flat 45%-alpha green over grass is nearly invisible on a
+       * phone in daylight, and the outline is also what makes the tile *count* readable —
+       * which is the thing you are actually judging when extending a runway to reach a class.
+       */
       ctx.globalAlpha = 1;
+      ctx.strokeStyle = tint;
+      ctx.lineWidth = 2 / dpr;
+      for (const tile of preview.tiles) {
+        const left = screenX(tile.x);
+        const top = screenY(tile.y);
+        ctx.strokeRect(
+          left + ctx.lineWidth / 2,
+          top + ctx.lineWidth / 2,
+          screenX(tile.x + 1) - left - ctx.lineWidth,
+          screenY(tile.y + 1) - top - ctx.lineWidth,
+        );
+      }
+
+      /*
+       * The crosshair, last and unsnapped, so it tracks the finger smoothly while the tiles
+       * beneath it snap. Deliberately in screen space: it marks where you are aiming, not a
+       * position on the map.
+       */
+      if (preview.aim) {
+        const { x, y } = preview.aim;
+        const arm = 9;
+        ctx.strokeStyle = PALETTE.v;
+        ctx.lineWidth = 2 / dpr;
+        ctx.beginPath();
+        ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.moveTo(x - arm, y);
+        ctx.lineTo(x - 3, y);
+        ctx.moveTo(x + 3, y);
+        ctx.lineTo(x + arm, y);
+        ctx.moveTo(x, y - arm);
+        ctx.lineTo(x, y - 3);
+        ctx.moveTo(x, y + 3);
+        ctx.lineTo(x, y + arm);
+        ctx.stroke();
+      }
     }
   }
 

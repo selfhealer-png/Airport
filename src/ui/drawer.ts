@@ -215,6 +215,19 @@ export interface DrawerHandlers {
    * thumb takes a whole runway out before they have noticed the drawer went away.
    */
   onToolArmed?: () => void;
+  /**
+   * The armed tool changed — armed, swapped, or put down.
+   *
+   * Separate from `onToolArmed` because the two disagree about demolish: the drawer's
+   * auto-collapse skips it deliberately, since a stray drag on a map that has just grown
+   * under the thumb can take out a whole runway. The build zoom must *not* skip it — demolish
+   * is a single-tile tool and the one where hitting the wrong tile costs the most.
+   *
+   * Fires on every path that disarms, including tapping the armed chip again and
+   * `clearSelection()`, because whatever moved the camera on arming has to be able to put it
+   * back.
+   */
+  onToolChanged?: (tool: Tool | null) => void;
 }
 
 export function createDrawer(
@@ -281,10 +294,14 @@ export function createDrawer(
       return { text: top?.text ?? '', warnings };
     },
     clearSelection() {
+      const had = selected !== null;
       selected = null;
       selectedId = null;
       paintSelection();
       status.textContent = defaultStatus;
+      // Guarded, because this is called unconditionally when a day begins and when a level is
+      // entered; firing on a disarm that did not happen would restore a camera nobody moved.
+      if (had) handlers.onToolChanged?.(null);
     },
   };
 
@@ -309,6 +326,7 @@ export function createDrawer(
       paintSelection();
       status.textContent = `${chip.label} — ${chip.hint}`;
       if (chip.tool.kind !== 'demolish') handlers.onToolArmed?.();
+      handlers.onToolChanged?.(chip.tool);
     });
 
     buttons.set(chip.id, button);

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BUILD_TILE_PX,
+  buildZoom,
   clampCamera,
   createCamera,
   fieldOverflows,
@@ -176,5 +178,51 @@ describe('fieldOverflows', () => {
     // fraction of a pixel is not something a thumb can chase.
     expect(fieldOverflows(map, 1, world.w - 0.4, world.h - 0.4)).toBe(false);
     expect(fieldOverflows(map, 1, world.w - 2, world.h - 2)).toBe(true);
+  });
+});
+
+/**
+ * The zoom used while a tool is armed.
+ *
+ * At the fitted zoom a tile is about 11 CSS px, which is smaller than the part of a thumb
+ * that touches the glass — you cannot aim at what you cannot see past. These pin that arming
+ * a tool always makes the tile bigger, on every device ratio, without leaving the crisp
+ * lattice.
+ */
+describe('buildZoom', () => {
+  const RATIOS = [1, 2, 2.625, 3];
+
+  it('always gives a tile at least as big as the target', () => {
+    for (const dpr of RATIOS) {
+      expect(TILE_PX * buildZoom(dpr)).toBeGreaterThanOrEqual(BUILD_TILE_PX);
+    }
+  });
+
+  it('stays on the crisp lattice', () => {
+    // Build mode gets no exception from the whole-device-pixel rule that keeps the art sharp.
+    for (const dpr of RATIOS) {
+      const steps = buildZoom(dpr) * dpr;
+      expect(Math.abs(steps - Math.round(steps))).toBeLessThan(1e-9);
+    }
+  });
+
+  it('picks the smallest step that will do, not the biggest', () => {
+    // Zooming further than needed would show less of the field for no gain in aim.
+    for (const dpr of RATIOS) {
+      expect(TILE_PX * (buildZoom(dpr) - 1 / dpr)).toBeLessThan(BUILD_TILE_PX);
+    }
+  });
+
+  it('is always a zoom in from the fitted view on a phone', () => {
+    // The property that matters: arming a tool must never zoom *out*, on any device.
+    for (const dpr of RATIOS) {
+      expect(buildZoom(dpr)).toBeGreaterThan(fitScale(LEVEL_MEADOW, 390, 606, dpr));
+    }
+  });
+
+  it('leaves the field bigger than the screen, so panning is available', () => {
+    // Zooming in for precision is only usable because two fingers can pan; this pins that the
+    // build zoom actually reaches the state where panning unlocks.
+    expect(fieldOverflows(LEVEL_MEADOW, buildZoom(3), 390, 606)).toBe(true);
   });
 });

@@ -60,6 +60,17 @@ export interface Placement {
   readonly growing?: string;
 }
 
+/**
+ * Whether this tool draws a line between two tiles.
+ *
+ * The rest ignore `from` entirely and build on the tile the finger lifts from. Named here
+ * rather than re-derived at the call site, so the gesture layer and the resolver can never
+ * disagree about which tools need a drag at all.
+ */
+export function isLineTool(tool: Tool): boolean {
+  return tool.kind === 'runway' || tool.kind === 'taxiway' || tool.kind === 'road';
+}
+
 function line(from: TileIndex, to: TileIndex): TileIndex[] {
   const stepX = Math.sign(to.x - from.x);
   const stepY = Math.sign(to.y - from.y);

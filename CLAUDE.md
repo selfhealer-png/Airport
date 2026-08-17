@@ -423,6 +423,59 @@ redrawn and every frame compares equal — which reads as "the camera did not mo
 truth is. Layout measurements (`getBoundingClientRect`) are unaffected and are the reliable
 signal; anything about the camera belongs in `tests/camera.test.ts`.
 
+### Placing something on a 11-pixel tile
+
+At the fitted zoom a tile is about 11 CSS px — smaller than the part of a thumb that touches
+the glass. Four things together make that placeable, and they solve four different problems;
+none substitutes for another.
+
+- **Arming a tool zooms in.** `buildZoom()` in `render/camera.ts` picks the smallest crisp
+  step whose tiles are at least `BUILD_TILE_PX` across, and putting the tool away restores
+  wherever the player was. Not 44px, the usual touch-target minimum: that would need scale
+  2.75 and show 8% of the field, and the field is 35x45 precisely so a level can be seen
+  whole. A build is not a blind one-shot tap — the preview shows what will happen and the drag
+  is correctable until release — so the bar is "a thumb's wobble moves you a fraction of a
+  tile", not "you can hit it without looking".
+- **Two fingers pan as well as pinch**, in `input/pointer.ts`. This is what makes zooming in
+  usable at all: one-finger drag belongs to building, so before this, zooming in left you
+  unable to reach the rest of the field. Zoom is applied about the midpoint first and the
+  translation added after, so the two compose. The translation is gated on `canPan` and the
+  zoom is not — gating both would make the panning state unreachable.
+- **The game aims above your fingertip.** `AIM_OFFSET_PX` in `input/drag.ts`, with a crosshair
+  drawn at the aim point. Applies to every tool including demolish: a rule that holds
+  sometimes is a rule a thumb cannot learn. It clamps near the top of the map, which leaves a
+  band where the crosshair stops climbing — the honest cost, and survivable because a contact
+  in that band still targets the top visible row.
+- **The anchor floats.** For the first `ANCHOR_LOCK_PX` of travel the start tile follows the
+  finger, then locks. The first tile of a line used to be fixed the instant the finger landed,
+  with no preview and no second chance — the highest-precision moment in the game and the only
+  one with no feedback at all. Single-tile tools already worked this way (`resolvePlacement`
+  ignores `from` for them); the crosshair is what makes it discoverable.
+
+`input/drag.ts` is DOM-free and holds the whole gesture shape as a pure reducer, for the same
+reason `ui/placement.ts` is: the offsets and the lock threshold are the parts most likely to be
+subtly wrong and the parts a `node` test can reach. `pointer.ts` is a thin event pump over it.
+
+**What a drag *means* is untouched.** Runways still lock to their starting column, taxiways
+still snap to an axis, growing still beats refusing. This changed how a drag is *made*, not
+what it does, which is what keeps `tests/placement.test.ts` a valid oracle throughout.
+
+Three bugs fixed on the way, all in the gesture layer:
+
+- **A second finger used to commit the build**, not cancel it — `endBuild()` called
+  `onBuildEnd`, which builds. `pointercancel` shared that path, so an iOS notification banner
+  mid-drag built a runway. There is now an `onBuildCancel` channel, and cancelling gives the
+  gesture the abort it never had.
+- **`onCameraMoved` fired even when the pinch changed nothing**, so resting two fingers on the
+  map set `framed` permanently and the map never re-fitted itself again — the exact poison the
+  `canPan` gate exists to prevent, arriving through the other gesture.
+- **A third finger killed the pinch** and lifting back did not recover, because the baseline
+  was never recomputed. The gesture is now defined by the two oldest contacts and re-bases
+  whenever the pointer set changes.
+
+`onTap` was deleted. It was unreachable whenever a tool was armed, and with no tool armed
+there is nothing a tap on the map should do.
+
 ### Panning is only allowed when there is something off screen
 
 `fieldOverflows()` in `render/camera.ts` gates the one-finger drag, via `PointerHandlers.canPan`.

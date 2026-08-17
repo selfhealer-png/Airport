@@ -116,6 +116,31 @@ export function fieldOverflows(
   return world.width * scale > viewW + 0.5 || world.height * scale > viewH + 0.5;
 }
 
+/**
+ * How large a tile should be while a build tool is armed, in CSS pixels.
+ *
+ * Not 44 — the usual minimum touch target — because a tile is not a button: the preview
+ * shows what a drag will do before it commits, the drag can be corrected before release, and
+ * undo covers the rest. What matters is that the tile is comfortably bigger than a fingertip
+ * is imprecise, while still leaving enough field on screen to see what you are joining up to.
+ * At 26.7px on a 3x phone that is roughly 14 by 22 tiles in view.
+ */
+export const BUILD_TILE_PX = 24;
+
+/**
+ * The zoom to use while building: the smallest crisp step whose tiles are big enough to hit.
+ *
+ * Snapped like every other zoom, because the whole-device-pixel rule is what keeps the art
+ * sharp and does not get an exception for build mode.
+ */
+export function buildZoom(dpr: number, minTilePx = BUILD_TILE_PX): number {
+  for (let steps = MIN_DEVICE_STEPS; steps <= Math.round(MAX_SCALE * dpr); steps++) {
+    const scale = steps / dpr;
+    if (TILE_PX * scale >= minTilePx) return scale;
+  }
+  return snapScale(MAX_SCALE, dpr);
+}
+
 /** Puts the middle of the map in the middle of the screen. */
 export function centreOn(camera: Camera, map: LevelMap, viewW: number, viewH: number): void {
   const world = worldSize(map);

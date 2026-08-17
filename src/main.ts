@@ -2,13 +2,16 @@ import './ui/styles.css';
 import { bakeAtlas } from '@/sprites/atlas';
 import { Renderer, type BuildPreview } from '@/render/renderer';
 import {
+  buildZoom,
   centreOn,
   clampCamera,
   createCamera,
   deviceRatio,
   fieldOverflows,
   fitScale,
+  zoomAt,
 } from '@/render/camera';
+import type { AimPoint, BuildAim } from '@/input/drag';
 import { attachPointerControls } from '@/input/pointer';
 import { LEVEL_MEADOW } from '@/content/levels';
 import { generateSchedule } from '@/content/schedule';
@@ -22,7 +25,7 @@ import { createDrawer } from '@/ui/drawer';
 import { createDayBar, type Speed } from '@/ui/daybar';
 import { showDebrief } from '@/ui/debrief';
 import { CAMPAIGN_DAYS } from '@/content/schedule';
-import { commitPlacement, resolvePlacement, type Placement } from '@/ui/placement';
+import { commitPlacement, isLineTool, resolvePlacement, type Placement } from '@/ui/placement';
 import { createMenu, type CurrentGame } from '@/ui/menu';
 import { clearProgress, loadProgress, markCompleted, unlockAll } from '@/save/progress';
 import { toSnapshot, restoreInto } from '@/save/snapshot';
@@ -123,7 +126,38 @@ function start(): void {
      * The bar's toggle, now labelled with the armed tool, is the way back in.
      */
     onToolArmed: () => setExpanded(false),
+    onToolChanged: (tool) => (tool ? armBuildZoom() : releaseBuildZoom()),
   });
+
+  /**
+   * Zooms in far enough to aim at a tile, remembering where the player was.
+   *
+   * Never zooms *out*: if they have already pinched in past the build zoom they are being
+   * more precise than this would be, and pulling them back would be the map overruling them.
+   * Not routed through `onCameraMoved`, because this is the app moving the camera rather than
+   * the player — marking it as theirs would stop the map ever re-fitting itself again.
+   */
+  function armBuildZoom(): void {
+    const target = buildZoom(deviceRatio());
+    if (camera.scale >= target) return;
+    if (!restFrame) restFrame = { x: camera.x, y: camera.y, scale: camera.scale };
+    framedByBuild = true;
+    const { width, height } = renderer.viewport;
+    zoomAt(camera, width / 2, height / 2, target, deviceRatio());
+    clampCamera(camera, state.airport.map, width, height);
+  }
+
+  /** Back to whatever they were looking at before, unless they have since chosen otherwise. */
+  function releaseBuildZoom(): void {
+    framedByBuild = false;
+    const rest = restFrame;
+    restFrame = null;
+    if (!rest) return;
+    camera.x = rest.x;
+    camera.y = rest.y;
+    camera.scale = rest.scale;
+    clampCamera(camera, state.airport.map, renderer.viewport.width, renderer.viewport.height);
+  }
 
   const planningPanel = document.createElement('div');
   // Named so the stylesheet can float the hint and the body above the bar without also
@@ -170,7 +204,7 @@ function start(): void {
     toggleButton.classList.toggle('is-selected', expanded || armed !== null);
 
     const { text, warnings } = drawer.headline(state);
-    const message = armed ? `Placing ${armed.toLowerCase()} — drag on the map.` : text;
+    const message = armed ? `Placing ${armed.toLowerCase()} — aim with the crosshair; two fingers to move the map.` : text;
     // The hint is the collapsed view's whole teaching channel, so it is only hidden when
     // there is genuinely nothing to say.
     /*
@@ -200,7 +234,6 @@ function start(): void {
     // The layout changed underneath the current drag, so anything in flight is now stale.
     drawer.clearSelection();
     placement = null;
-    dragFrom = null;
     drawer.refresh(state);
     updateHud();
     paintShell();
@@ -292,10 +325,26 @@ function start(): void {
     if (because) report(`Paused — ${because}`);
   };
 
-  let dragFrom: TileIndex | null = null;
   let placement: Placement | null = null;
   /** False until the player pans or zooms; while false the map keeps re-fitting itself. */
   let framed = false;
+
+  /*
+   * Build zoom.
+   *
+   * A tile is about 11 CSS px at the fitted zoom, which is smaller than the part of a thumb
+   * that touches the glass — placing anything precisely was guesswork. Arming a tool zooms in
+   * far enough that a tile is a target, and putting the tool away goes back to the whole
+   * field, so the player never has to think about zoom at all.
+   *
+   * `restFrame` is where they were before, restored on disarm — but only if they have not
+   * moved the camera themselves since. If they have, the framing is theirs and snatching it
+   * back would feel like the map arguing with them.
+   */
+  let restFrame: { x: number; y: number; scale: number } | null = null;
+  let framedByBuild = false;
+  /** Where the crosshair is, while a finger is down with a tool armed. */
+  let crosshair: AimPoint | null = null;
   let accumulator = 0;
   let lastFrame = performance.now();
 
@@ -317,6 +366,14 @@ function start(): void {
   const relayout = (): void => {
     if (!renderer.resize()) return;
     const { width, height } = renderer.viewport;
+
+    // A resize while a tool is armed must not throw the build zoom away and re-fit the whole
+    // field — that would drop the player back to unhittable tiles mid-build.
+    if (framedByBuild) {
+      camera.scale = buildZoom(deviceRatio());
+      clampCamera(camera, state.airport.map, width, height);
+      return;
+    }
 
     if (!framed) {
       camera.scale = fitScale(state.airport.map, width, height, deviceRatio());
@@ -420,7 +477,6 @@ function start(): void {
     history.clear();
     drawer.clearSelection();
     placement = null;
-    dragFrom = null;
     // Levels may differ in size, so the map has to re-fit itself; without this the new field
     // is drawn at the previous one's zoom and offset, with nothing to explain why.
     framed = false;
@@ -441,7 +497,6 @@ function start(): void {
   function beginDay(): void {
     drawer.clearSelection();
     placement = null;
-    dragFrom = null;
     paused = false;
     accumulator = 0;
     dayBar.setPaused(false);
@@ -529,11 +584,19 @@ function start(): void {
     }
   };
 
-  const updatePlacement = (to: TileIndex): void => {
+  /*
+   * Resolves what the current aim would build, and prices it.
+   *
+   * While a line's anchor is still floating there is nothing meaningful to price — a runway
+   * of one tile is always "too short" — so the report is held back until the anchor locks or
+   * the tool is one that only needs a single tile. Otherwise the first fifth of every drag
+   * would shout an error the player has not made yet.
+   */
+  const updatePlacement = (aim: BuildAim): void => {
     const tool = drawer.selected;
-    if (!tool || !dragFrom) return;
-    placement = resolvePlacement(state, tool, dragFrom, to);
-    report(describe(placement));
+    if (!tool) return;
+    placement = resolvePlacement(state, tool, aim.from, aim.to);
+    if (aim.locked || !isLineTool(tool)) report(describe(placement));
   };
 
   /**
@@ -606,18 +669,22 @@ function start(): void {
         renderer.viewport.width,
         renderer.viewport.height,
       ),
-    onBuildStart(tile) {
-      dragFrom = tile;
-      updatePlacement(tile);
-    },
-    onBuildMove(tile) {
-      updatePlacement(tile);
+    onBuildUpdate(aim) {
+      crosshair = aim.aim;
+      updatePlacement(aim);
     },
     onCameraMoved() {
       framed = true;
+      /*
+       * The player has taken the camera. Drop the remembered frame so putting the tool away
+       * leaves them where they chose to be, rather than yanking the map back to where they
+       * happened to be standing when they armed it.
+       */
+      restFrame = null;
     },
-    onBuildEnd() {
+    onBuildEnd(aim) {
       const tool = drawer.selected;
+      updatePlacement(aim);
       // Captured before the commit and only kept if the commit happened, so a refused
       // placement never leaves a do-nothing entry on the undo stack.
       const before = tool && placement ? capture(state) : null;
@@ -630,8 +697,15 @@ function start(): void {
       } else if (placement) {
         report(describe(placement));
       }
-      dragFrom = null;
+      crosshair = null;
       placement = null;
+    },
+    onBuildCancel() {
+      // Nothing is committed and nothing reaches the undo stack: a cancelled build never
+      // happened. Losing a drag beats building the wrong thing.
+      crosshair = null;
+      placement = null;
+      report('Build cancelled.');
     },
   });
 
@@ -674,8 +748,16 @@ function start(): void {
       if (phase() === 'debrief') finishDay();
     }
 
+    /*
+     * `exactOptionalPropertyTypes` is on, so the crosshair is spread in when it exists rather
+     * than set to undefined.
+     */
     const preview: BuildPreview | undefined = placement
-      ? { tiles: placement.tiles, valid: isAffordableQuote(placement.check) }
+      ? {
+          tiles: placement.tiles,
+          valid: isAffordableQuote(placement.check),
+          ...(crosshair ? { aim: crosshair } : {}),
+        }
       : undefined;
     renderer.draw(state, camera, preview);
     requestAnimationFrame(frame);
