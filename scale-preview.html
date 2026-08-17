@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Airfield — field size preview</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #101a20;
+        color: #eef2f5;
+        font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .row { display: flex; gap: 24px; align-items: flex-start; }
+      figure { margin: 0; }
+      figcaption { margin: 8px 0 0; max-width: 390px; line-height: 1.45; }
+      figcaption strong { display: block; font-size: 15px; margin-bottom: 4px; }
+      .frame {
+        width: 390px;
+        height: 606px;
+        border: 1px solid #2f4b5a;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #1b2a33;
+      }
+      canvas { image-rendering: pixelated; display: block; }
+      .muted { opacity: 0.65; }
+    </style>
+  </head>
+  <body>
+    <div class="row" id="sheet"></div>
+    <script type="module" src="/src/dev/scale-preview.ts"></script>
+  </body>
+</html>

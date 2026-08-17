@@ -31,10 +31,16 @@ describe('camera clamping', () => {
   });
 
   it('centres an axis that is narrower than the viewport', () => {
-    // At scale 1 the 20-tile-wide field is 320 world px against a 390 px viewport.
+    // Derived from the field rather than hardcoded, so resizing the map cannot quietly turn
+    // this into a test of the opposite case. This is the state the game sits in whenever the
+    // whole field fits, which since the field grew is most of the time.
+    const wide = LEVEL_MEADOW.width * TILE_PX + 100;
+    const tall = LEVEL_MEADOW.height * TILE_PX + 100;
     const camera = { ...createCamera(), scale: 1, x: 0, y: 0 };
-    clampCamera(camera, LEVEL_MEADOW, VIEW_W, VIEW_H);
-    expect(camera.x).toBe((LEVEL_MEADOW.width * TILE_PX - VIEW_W) / 2);
+    clampCamera(camera, LEVEL_MEADOW, wide, tall);
+
+    expect(camera.x).toBe((LEVEL_MEADOW.width * TILE_PX - wide) / 2);
+    expect(camera.y).toBe((LEVEL_MEADOW.height * TILE_PX - tall) / 2);
   });
 });
 
@@ -104,8 +110,18 @@ describe('fitting the field on a phone', () => {
   }
 
   it('picks the largest zoom that still fits rather than the smallest', () => {
-    // A 390px screen has room for 1 CSS px per sprite pixel; it must not settle for 2/3.
-    expect(fitScale(LEVEL_MEADOW, 390, 700, 3)).toBeCloseTo(1, 9);
+    // Pinned as a property, not a number: the chosen step fits and the next one up does not.
+    // The old version asserted a literal 1, which silently became wrong the moment the field
+    // was resized — the behaviour was fine, the test was just describing a different map.
+    const width = 390;
+    const height = 700;
+    const dpr = 3;
+    const fits = (s: number): boolean =>
+      LEVEL_MEADOW.width * TILE_PX * s <= width && LEVEL_MEADOW.height * TILE_PX * s <= height;
+
+    const scale = fitScale(LEVEL_MEADOW, width, height, dpr);
+    expect(fits(scale)).toBe(true);
+    expect(fits(scale + 1 / dpr)).toBe(false);
   });
 });
 

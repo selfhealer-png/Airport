@@ -248,9 +248,18 @@ describe('several terminals', () => {
   it('ignores a terminal with no road to it', () => {
     // Built is not working. A second terminal nothing can drive to adds no capacity, exactly
     // as an unroaded tower staffs nobody.
+    //
+    // The road has to be taken away deliberately: `fullyServiced` puts road on every free
+    // tile, so an unroaded building cannot simply be dropped somewhere. A previous version of
+    // this test placed the terminal at y=38 on a 36-row map — off the map entirely — and
+    // passed for that reason rather than this one.
     const state = airport([2]);
-    state.airport.facilities.push({ id: 'f-orphan', type: 'terminal', x: 20, y: 38, level: 4 });
-    // No `fullyServiced` re-run, so the new one sits on bare grass.
+    const [ox, oy] = [20, 30];
+    const width = state.airport.map.width;
+    for (const [dx, dy] of [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
+      state.airport.roads[(oy + dy) * width + (ox + dx)] = 0;
+    }
+    state.airport.facilities.push({ id: 'f-orphan', type: 'terminal', x: ox, y: oy, level: 4 });
 
     expect(capacityOf(state).passengerCapacity).toBe(terminalLevel(2).passengerCapacity);
   });

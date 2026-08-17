@@ -56,23 +56,25 @@ export function terrainFrom(rows: readonly string[]): {
 }
 
 /**
- * Sized so the whole field fits on a phone at one CSS pixel per sprite pixel.
+ * Sized so the whole field fits on a phone at the 2/3 zoom step.
  *
- * The longest aeroplane wants sixteen tiles of runway, and beside that has to fit taxiways,
- * an apron, the landside road network and the buildings it feeds — so the field has to be big
- * enough to run out of room in an interesting way rather than an arbitrary one. But the
- * binding constraint turned out to be the screen, not the campaign.
+ * Two constraints pull against each other. An airport that can take a superheavy needs about
+ * 19x31 tiles once its runways, apron, taxiways and landside roads are in — and an obstacle
+ * level has to lose a fifth of its ground to rock and woods on top of that. But zoom snaps to
+ * whole device pixels, so the rungs are 1/3, 2/3, 1 and 4/3 and nothing in between.
  *
- * Zoom is a whole number of device pixels per sprite pixel, so it steps: on a 3x phone the
- * levels either side of 1 are 2/3 and 4/3. At 42 rows the field was a hair too tall to fit at
- * 1, which dropped it to 2/3 and drew the entire airport a third smaller than it needed to be.
- * 36 rows clears it with room for the advice line — 576 world pixels against roughly 630 of
- * map area on a modern iPhone — and still leaves twenty rows more than the longest runway
- * needs. Grow this and check `fitScale` against a real phone viewport before assuming it is
- * free.
+ * At 24x36 the field fitted at scale 1 and looked handsome, and an airport filled 68% of it —
+ * which left almost nothing once terrain took its share. Dropping one rung to 2/3 makes a tile
+ * 10.7 CSS px and buys 1.8x the ground: 35x45 is the largest field that still fits *entirely*
+ * on the smallest phone worth supporting (an SE, 375x490 of map area), so no level ever needs
+ * panning to be seen whole. That matters more than sprite size here, because the puzzle is the
+ * road and taxiway network and you have to be able to see all of it at once.
+ *
+ * Grow this and the field stops fitting an SE. Check `fitScale` against a real viewport first;
+ * the cost is invisible on a desktop window.
  */
-const FIELD_WIDTH = 24;
-const FIELD_HEIGHT = 36;
+const FIELD_WIDTH = 35;
+const FIELD_HEIGHT = 45;
 
 export const LEVEL_MEADOW: LevelMap = {
   id: 'meadow',
@@ -97,42 +99,51 @@ export const LEVEL_BRACKEN_RISE: LevelMap = {
   id: 'bracken-rise',
   name: 'Bracken Rise',
   ...terrainFrom([
-    'gggggggggggggggggggggggg',
-    'gggggggggggggggggggggggg',
-    'gggrggggrggggggggggggggg',
-    'grrrrrgrrrgggggggggggggg',
-    'grrrrrrrrrrggggggggggggg',
-    'rrrrrrrrrrgggggggggggggg',
-    'grrrrrrrrggggggggggggggg',
-    'grrrrrrrrggggggggggggggg',
-    'gggrrrrrrrgggggggggggggg',
-    'ggggrrrrrggggggggggggggg',
-    'gggrrrrggggggggggggggggg',
-    'ggrrrrrggggggggggggggggg',
-    'gggrrrgggggggggggggggggg',
-    'ggggrggggggggggggggggggg',
-    'gggggggggggggggggggggggg',
-    'gggggggggggggggggggggggg',
-    'gggggggggggggggggggggggg',
-    'gggggggggggggggggggggggg',
-    'gggggggggggggggggggggggg',
-    'gggggggggggggggggggggggg',
-    'gggggggggggggggggggggggg',
-    'gggggggggggggggggfgggggg',
-    'ggggggggggfgggggfffggggg',
-    'ggggggggfffffggfffffgggg',
-    'gggggggffffffffffffggggg',
-    'ggggggggffffffffffgggggg',
-    'ggggggggggfffffffggggggg',
-    'ggggggggfggfffffffgggggg',
-    'gggggggfffggfffffggggggg',
-    'ggggggfffffgfffffggggggg',
-    'gggggggfffggggfggggggggg',
-    'ggggggggfggggfgggggggggg',
-    'ggggggggggfffffffggggggg',
-    'gggggggggggggfgggggggggg',
-    'gggggggggggggggggggggggg',
-    'gggggggggggggggggggggggg',
+    'ggggggggggggggggggggggggggggggggggg',
+    'ggggggggggggggggggggggggggggggggggg',
+    'gggrggggggggggggggggggggggggggggggg',
+    'grrrrrggggrgggggggggggggggggggggggg',
+    'rrrrrrrgrrrrrgggggggggggggggggggggg',
+    'rrrrrrrrrrrrrrggggggggggggggggggggg',
+    'rrrrrrrrrrrrrgggggggggggggggggggggg',
+    'rrrrrrrrrrrgggggggggggggggggggggggg',
+    'rrrrrrrrrrggggggggggggggggggggggggg',
+    'grrrrrrrrrggggggggggggggggggggggggg',
+    'gggrrrrrrrrgggggggggggggggggggggggg',
+    'gggggrrrrrggggggggggggggggggggggggg',
+    'ggggrrrrrrggggggggggggggggggggggggg',
+    'ggrrrrrrggggggggggggggggggggggggrgg',
+    'grrrrrrrgggggggggggggggggggggggrrrg',
+    'ggrrrrrgggggggggggggggggggggggrrrrr',
+    'ggggrgggggggggggggggggggggggggrrrrr',
+    'gggggggggggggggggggggggggggggrrrrrr',
+    'ggggggggggggggggggggggggggggggrrrrr',
+    'ggggggggggggggggggggggggggggggrrrrr',
+    'ggggggggggggggggggggggggggggggrrrrg',
+    'gggggggggggggggggggggggggggggrrrrgg',
+    'gggggggggggggggggggggggggggggrrrggg',
+    'ggggggggggggggggggggggggggggrrrrrgg',
+    'gggggggggggggggggggggggggggggrrrggg',
+    'gggggggggggggggggggggggggggggrrrggg',
+    'ggggggggggggggggggggggggggggggrgggg',
+    'ggggggggggggggggggggggggfgggggggggg',
+    'gggggggggggggfggggggggfffffgggggggg',
+    'gggggggggggfffffggggggfffffgggggggg',
+    'ggggggggggfffffffggggfffffffggggggg',
+    'gggggggggfffffffffgfggfffffgggggggg',
+    'ggggggggggfffffffffffffffffgggggggg',
+    'gggggggggggffffffffffffgfgggggggggg',
+    'gggggggggggggfggfffffffgggggggggggg',
+    'ggggggggggfggggfffffffffggggggggggg',
+    'ggggggggfffffgggfffffffggggfggggggg',
+    'ggggggggfffffgggfffffffggfffffggggg',
+    'gggggggfffffffgggfffffgggfffffggggg',
+    'ggggggggfffffggggfffggggfffffffgggg',
+    'ggggggggfffffgfffffffggggfffffggggg',
+    'ggggggggggfggfffffffffgggfffffggggg',
+    'ggggggggggggggfffffffggggggfggggggg',
+    'gggggggggggggggggfggggggggggggggggg',
+    'ggggggggggggggggggggggggggggggggggg',
   ]),
 };
 

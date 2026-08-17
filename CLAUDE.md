@@ -631,11 +631,19 @@ currently the only thing that needs it.
   will run the game on a phone but will not register the service worker or offer to install.
   Full PWA testing needs `localhost`, HTTPS, or a tunnel.
 - The map is portrait-only by design. Landscape is not handled and is not meant to be.
-- **The field's height is set by the phone, not by the campaign.** Zoom steps in whole device
-  pixels, so on a 3x screen the levels either side of 1 are 2/3 and 4/3 — nothing between. At
-  42 rows the field was a hair too tall to fit at 1 and dropped to 2/3, drawing the whole
-  airport a third smaller than it needed to be. Check `fitScale` against a real phone viewport
-  before growing `FIELD_HEIGHT`; the cost is invisible on a desktop window.
+- **The field's size is set by the phone, not by the campaign.** Zoom steps in whole device
+  pixels, so on a 3x screen the rungs are 1/3, 2/3, 1 and 4/3 — nothing between. The field is
+  **35x45 and sits on the 2/3 rung**, which is the largest map that still fits *entirely* on
+  the smallest phone worth supporting (an SE, 375x490 of map area). That is deliberate: no
+  level should ever need panning to be seen whole, because the puzzle is the road and taxiway
+  network and you have to see all of it at once.
+
+  It used to be 24x36 at scale 1, which looked better and was too small to play on — an
+  airport fills about 19x31 tiles, so it took 68% of the field before terrain took its share.
+  Dropping one rung costs a third of the apparent sprite size and buys 1.8x the ground. Grow
+  `FIELD_WIDTH`/`FIELD_HEIGHT` past 35x45 and the field stops fitting an SE; check `fitScale`
+  against a real viewport first, because the cost is invisible on a desktop window.
+  `scale-preview.html` draws every level at phone size with an airport on it, for exactly this.
 - **A CSS `display` declaration beats `[hidden]`.** Overlays (`#modal`, `#crash`) need an
   explicit `[hidden] { display: none }` rule or they scrim the whole game.
 - **Grid tracks must be `minmax(0, …)`.** A track's automatic minimum is its content's
