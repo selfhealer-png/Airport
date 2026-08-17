@@ -128,8 +128,14 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
    * PWA on a phone: there is no address bar to type into and no console to call from. Five is
    * far past anything a player reaches by accident, and the title says so once it fires, so it
    * can never trigger silently.
+   *
+   * The count lapses if a couple of seconds pass between taps, so this reads as one gesture
+   * rather than an accumulator that five stray taps could fill over an entire session, spread
+   * across multiple visits to the menu.
    */
+  const TITLE_TAP_LAPSE_MS = 2000;
   let titleTaps = 0;
+  let titleTapTimer: ReturnType<typeof setTimeout> | null = null;
   let unlocked = false;
 
   const disarm = (): void => {
@@ -153,9 +159,17 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
     title.className = 'menu-title';
     title.textContent = unlocked ? 'Airfield — all levels unlocked' : 'Airfield';
     title.addEventListener('click', () => {
+      if (titleTapTimer) clearTimeout(titleTapTimer);
       titleTaps += 1;
-      if (titleTaps < 5) return;
+      if (titleTaps < 5) {
+        titleTapTimer = setTimeout(() => {
+          titleTaps = 0;
+          titleTapTimer = null;
+        }, TITLE_TAP_LAPSE_MS);
+        return;
+      }
       titleTaps = 0;
+      titleTapTimer = null;
       unlocked = true;
       handlers.onUnlockAll();
     });

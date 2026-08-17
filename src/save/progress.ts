@@ -44,8 +44,9 @@ export function addCompleted(completed: readonly string[], levelId: string): str
 export function isUnlocked(levelId: string, completed: readonly string[]): boolean {
   const index = LEVELS.findIndex((level) => level.id === levelId);
   if (index < 0) return false;
-  if (index === 0) return true;
-  return completed.includes(LEVELS[index - 1]!.id);
+  const previous = LEVELS[index - 1];
+  // No previous level only when `index` is 0 — the first level, which is always open.
+  return previous === undefined || completed.includes(previous.id);
 }
 
 /** Every level's id — what "unlocked" looks like when nothing is locked. */

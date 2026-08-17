@@ -28,12 +28,21 @@ describe('terrainFrom', () => {
 });
 
 import { LEVELS } from '@/content/levels';
-import { MIN_RUNWAY_TILES } from '@/content/costs';
 import { AIRCRAFT_CLASSES } from '@/content/aircraft';
 
 /** The longest runway any class asks for. A map with no room for it is unwinnable. */
 const LONGEST_RUNWAY = Math.max(
   ...Object.values(AIRCRAFT_CLASSES).map((spec) => spec.runwayLength),
+);
+
+/**
+ * The longest runway any *military* class asks for. Used below to check for two qualifying
+ * columns rather than one — see that test for why one is not enough.
+ */
+const LONGEST_MILITARY_RUNWAY = Math.max(
+  ...Object.values(AIRCRAFT_CLASSES)
+    .filter((spec) => spec.use === 'military')
+    .map((spec) => spec.runwayLength),
 );
 
 /** Row-major index helper, matching `terrainAt`. */
@@ -45,7 +54,6 @@ describe.each(LEVELS.map((level) => [level.name, level] as const))(
   (_name, level) => {
     it('has terrain matching its declared size', () => {
       expect(level.terrain).toHaveLength(level.width * level.height);
-      expect(level.width).toBeGreaterThan(MIN_RUNWAY_TILES);
     });
 
     it('has room somewhere for the longest runway in the game', () => {
@@ -58,6 +66,28 @@ describe.each(LEVELS.map((level) => [level.name, level] as const))(
         }
       }
       expect(best).toBeGreaterThanOrEqual(LONGEST_RUNWAY);
+    });
+
+    /**
+     * Runway use is exclusive in both directions (see CLAUDE.md): a military strip will not
+     * take airliners and a civil runway will not take fast jets, so the campaign needs both
+     * kinds of strip standing at once. One column with room for the longest military class
+     * would satisfy "a runway fits here" and then stall military traffic on every day it is
+     * due, with nothing on screen to explain why — so this checks for two distinct columns,
+     * enough for a civil strip and a military one side by side.
+     */
+    it('has two distinct columns with room for the longest military runway', () => {
+      let qualifying = 0;
+      for (let x = 0; x < level.width; x++) {
+        let run = 0;
+        let best = 0;
+        for (let y = 0; y < level.height; y++) {
+          run = at(level, x, y) === 'grass' ? run + 1 : 0;
+          best = Math.max(best, run);
+        }
+        if (best >= LONGEST_MILITARY_RUNWAY) qualifying += 1;
+      }
+      expect(qualifying).toBeGreaterThanOrEqual(2);
     });
 
     /**

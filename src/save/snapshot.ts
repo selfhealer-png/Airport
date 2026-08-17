@@ -237,6 +237,13 @@ export function restoreInto(target: GameState, raw: unknown): boolean {
   target.day = restored.day;
   target.landedTotal = restored.landedTotal;
   target.scheduledTotal = restored.scheduledTotal;
+  // `target.seed` is deliberately left untouched. This was safe by construction while undo
+  // was the only caller — a snapshot could only ever be the same game's own history, so its
+  // seed always matched. `enterLevel()` in `main.ts` now also calls this, restoring a
+  // *different* game's snapshot on top of `target`, and every level currently shares one seed
+  // (see `SEED` in `main.ts`), so the mismatch this would otherwise cause never arises. If
+  // per-level seeds stop being "a one-line change", this needs revisiting — otherwise the
+  // previous level's seed silently carries over into the new one.
   // A day in progress is never snapshotted, so undo always lands back in planning.
   target.phase = 'planning';
   target.current = null;

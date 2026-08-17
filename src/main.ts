@@ -18,7 +18,7 @@ import { commitPlacement, resolvePlacement, type Placement } from '@/ui/placemen
 import { createMenu, type CurrentGame } from '@/ui/menu';
 import { clearProgress, loadProgress, markCompleted, unlockAll } from '@/save/progress';
 import { toSnapshot, restoreInto } from '@/save/snapshot';
-import { LEVELS } from '@/content/levels';
+import { levelById } from '@/content/levels';
 import type { GamePhase, TileIndex } from '@/sim/types';
 
 /**
@@ -220,6 +220,7 @@ function start(): void {
     // Only this level's game goes. Unlocks live on their own key precisely so that finishing
     // a level is never undone by starting again.
     clearGame();
+    hasLiveGame = false;
     showMenu();
   });
 
@@ -299,7 +300,19 @@ function start(): void {
   /** True while the menu is up, so the autosave does not write a game nobody is playing. */
   let inMenu = false;
 
+  /**
+   * Whether `state` holds a game the player has actually entered, as distinct from the
+   * placeholder loaded or created before the very first level is chosen. Set true by
+   * `enterLevel()` and false wherever a game is deliberately thrown away (`Start over`).
+   */
+  let hasLiveGame = false;
+
   const currentGame = (): CurrentGame | null => {
+    // The live game is the authority, not the save. With storage unavailable — iOS blocking
+    // cookies, private-mode quota — `loadGame()` is permanently null, and a menu built from it
+    // would offer "Start" for the airport the player is in the middle of building, then replace
+    // it on a single unconfirmed tap.
+    if (hasLiveGame) return { levelId: state.airport.map.id, day: state.day };
     const saved = loadGame();
     return saved ? { levelId: saved.airport.map.id, day: saved.day } : null;
   };
@@ -343,7 +356,7 @@ function start(): void {
    * works this way.
    */
   function enterLevel(levelId: string): void {
-    const map = LEVELS.find((level) => level.id === levelId);
+    const map = levelById(levelId);
     if (!map) return;
 
     const saved = loadGame();
@@ -370,6 +383,7 @@ function start(): void {
     accumulator = 0;
 
     inMenu = false;
+    hasLiveGame = true;
     menuHost.hidden = true;
     saveGame(state);
     showPlanning();
