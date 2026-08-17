@@ -48,6 +48,11 @@ export function isUnlocked(levelId: string, completed: readonly string[]): boole
   return completed.includes(LEVELS[index - 1]!.id);
 }
 
+/** Every level's id — what "unlocked" looks like when nothing is locked. */
+export function everyLevelId(): string[] {
+  return LEVELS.map((level) => level.id);
+}
+
 function storage(): Storage | null {
   try {
     return window.localStorage;
@@ -86,5 +91,22 @@ export function clearProgress(): void {
     store.removeItem(KEY);
   } catch {
     // Nothing useful to do.
+  }
+}
+
+/**
+ * Opens every level at once.
+ *
+ * A testing affordance, not a game mechanic: reaching Bracken Rise legitimately means fifty
+ * days on the meadow, which is a poor way to check the map you have just drawn. Writes the
+ * same record `markCompleted` does, so "Reset everything" undoes it like anything else.
+ */
+export function unlockAll(): void {
+  const store = storage();
+  if (!store) return;
+  try {
+    store.setItem(KEY, JSON.stringify({ version: PROGRESS_VERSION, completed: everyLevelId() }));
+  } catch {
+    // Losing the record is survivable; crashing is not.
   }
 }

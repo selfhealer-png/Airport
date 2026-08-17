@@ -16,7 +16,7 @@ import { showDebrief } from '@/ui/debrief';
 import { CAMPAIGN_DAYS } from '@/content/schedule';
 import { commitPlacement, resolvePlacement, type Placement } from '@/ui/placement';
 import { createMenu, type CurrentGame } from '@/ui/menu';
-import { clearProgress, loadProgress, markCompleted } from '@/save/progress';
+import { clearProgress, loadProgress, markCompleted, unlockAll } from '@/save/progress';
 import { toSnapshot, restoreInto } from '@/save/snapshot';
 import { LEVELS } from '@/content/levels';
 import type { GamePhase, TileIndex } from '@/sim/types';
@@ -311,6 +311,10 @@ function start(): void {
       clearGame();
       clearProgress();
       window.location.reload();
+    },
+    onUnlockAll: () => {
+      unlockAll();
+      showMenu();
     },
   });
 

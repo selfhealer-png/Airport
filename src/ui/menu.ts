@@ -81,6 +81,8 @@ export function menuRows(
 export interface MenuHandlers {
   onPlay(levelId: string): void;
   onResetEverything(): void;
+  /** Fired by the hidden tap gesture on the title. See `createMenu`. */
+  onUnlockAll(): void;
 }
 
 export interface Menu {
@@ -119,6 +121,17 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
   let armed: string | null = null;
   let armedTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /*
+   * Five taps on the title unlocks every level.
+   *
+   * A gesture rather than a URL parameter or a console call, because the game is an installed
+   * PWA on a phone: there is no address bar to type into and no console to call from. Five is
+   * far past anything a player reaches by accident, and the title says so once it fires, so it
+   * can never trigger silently.
+   */
+  let titleTaps = 0;
+  let unlocked = false;
+
   const disarm = (): void => {
     if (armedTimer) clearTimeout(armedTimer);
     armedTimer = null;
@@ -138,7 +151,14 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
 
     const title = document.createElement('h1');
     title.className = 'menu-title';
-    title.textContent = 'Airfield';
+    title.textContent = unlocked ? 'Airfield — all levels unlocked' : 'Airfield';
+    title.addEventListener('click', () => {
+      titleTaps += 1;
+      if (titleTaps < 5) return;
+      titleTaps = 0;
+      unlocked = true;
+      handlers.onUnlockAll();
+    });
 
     const sub = document.createElement('p');
     sub.className = 'menu-sub';

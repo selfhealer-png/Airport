@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LEVELS } from '@/content/levels';
-import { addCompleted, isUnlocked, parseProgress } from '@/save/progress';
+import { addCompleted, everyLevelId, isUnlocked, parseProgress } from '@/save/progress';
 
 /**
  * Which levels are open.
@@ -67,5 +67,22 @@ describe('reading a stored record', () => {
 
   it('drops entries that are not level ids', () => {
     expect(parseProgress({ version: 1, completed: ['meadow', 7, null] })).toEqual(['meadow']);
+  });
+});
+
+/**
+ * Reaching a later level means finishing the one before it, which is right for a player and
+ * useless for testing the map you just drew.
+ */
+describe('unlocking everything for testing', () => {
+  it('names every level, so nothing is left locked', () => {
+    expect(everyLevelId()).toEqual(LEVELS.map((level) => level.id));
+  });
+
+  it('satisfies the unlock chain for every level', () => {
+    const all = everyLevelId();
+    for (const level of LEVELS) {
+      expect(isUnlocked(level.id, all)).toBe(true);
+    }
   });
 });
