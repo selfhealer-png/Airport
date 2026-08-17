@@ -1,7 +1,14 @@
 import './ui/styles.css';
 import { bakeAtlas } from '@/sprites/atlas';
 import { Renderer, type BuildPreview } from '@/render/renderer';
-import { centreOn, clampCamera, createCamera, deviceRatio, fitScale } from '@/render/camera';
+import {
+  centreOn,
+  clampCamera,
+  createCamera,
+  deviceRatio,
+  fieldOverflows,
+  fitScale,
+} from '@/render/camera';
 import { attachPointerControls } from '@/input/pointer';
 import { LEVEL_MEADOW } from '@/content/levels';
 import { generateSchedule } from '@/content/schedule';
@@ -161,7 +168,15 @@ function start(): void {
     const message = armed ? `Placing ${armed.toLowerCase()} — drag on the map.` : text;
     // The hint is the collapsed view's whole teaching channel, so it is only hidden when
     // there is genuinely nothing to say.
-    hint.hidden = expanded || message === '';
+    /*
+     * The hint keeps its space even when it has nothing to say.
+     *
+     * It used to be `hidden`, which took it out of layout — and since the drawer is a grid
+     * row, that resized the map every time it appeared. Floating it instead put it *over* the
+     * map, covering the field it was telling you to build on. Reserving the space is the only
+     * option that neither moves the map nor hides it.
+     */
+    hint.classList.toggle('is-empty', expanded || message === '');
     hint.textContent = message;
     hint.classList.toggle('is-warn', !armed && warnings > 0);
     toggleButton.classList.toggle('has-warnings', !expanded && !armed && warnings > 0);
@@ -457,7 +472,7 @@ function start(): void {
   const report = (message: string): void => {
     drawer.setStatus(message);
     if (!expanded) {
-      hint.hidden = false;
+      hint.classList.remove('is-empty');
       hint.textContent = message;
     }
   };
@@ -492,6 +507,21 @@ function start(): void {
   attachPointerControls(canvas, camera, {
     // Building is only possible while planning; during a day the map is a spectacle.
     isBuilding: () => state.phase === 'planning' && drawer.selected !== null,
+    /*
+     * Panning is only meaningful when there is something off screen.
+     *
+     * At the default zoom the whole field fits on a phone, so a drag could only shove it off
+     * centre — and worse, any pan sets `framed`, after which the map never re-fits itself
+     * again. Pinch to zoom in and panning comes back on its own, because the field no longer
+     * fits.
+     */
+    canPan: () =>
+      fieldOverflows(
+        state.airport.map,
+        camera.scale,
+        renderer.viewport.width,
+        renderer.viewport.height,
+      ),
     onBuildStart(tile) {
       dragFrom = tile;
       updatePlacement(tile);

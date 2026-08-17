@@ -181,7 +181,6 @@ body {
   position: relative;
 }
 
-.drawer-panel > .drawer-hint,
 .drawer-panel > .drawer-body {
   position: absolute;
   bottom: 100%;
@@ -198,11 +197,28 @@ body {
   background: var(--panel);
 }
 
-/* The bar keeps the panel's own background; the floating parts need their own, since they
-   now sit over the map rather than over the drawer. */
-.drawer-panel > .drawer-hint {
-  margin-bottom: 8px;
-  background: rgba(232, 180, 74, 0.14);
+/*
+ * The hint stays in layout and simply goes invisible when it has nothing to say.
+ *
+ * Floating it alongside the body was wrong: it then sat over the bottom of the field, hiding
+ * the very map it was telling the player to drag a runway onto, with no way to dismiss it.
+ * `visibility` rather than `display` so the space it holds never changes — that constant
+ * height is what stops the drawer resizing the map.
+ */
+.drawer-panel > .drawer-hint.is-empty {
+  visibility: hidden;
+}
+
+/*
+ * One height for every drawer state.
+ *
+ * The day bar is a different shape from the planning bar, so without a floor the map area
+ * changed the moment a day started and the field jumped as it re-centred. Measured against the
+ * taller of the two — the planning panel, at bar 61 + hint 44 + gap 8 — plus whatever the home
+ * indicator needs. If either bar changes shape, re-measure: the number is the point.
+ */
+#drawer {
+  min-height: calc(113px + env(safe-area-inset-bottom));
 }
 
 /* The always-visible row: build, undo, and the one button that starts the day. */

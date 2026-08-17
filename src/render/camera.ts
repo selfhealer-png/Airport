@@ -94,6 +94,28 @@ export function fitScale(map: LevelMap, viewW: number, viewH: number, dpr: numbe
   return clampSteps(Math.floor(fit * dpr), dpr) / dpr;
 }
 
+/**
+ * Whether any part of the field is off screen at this zoom.
+ *
+ * This is what decides whether a one-finger drag may pan. When the whole field already fits,
+ * a pan can only shove it away from centre and leave it there — there is nothing beyond the
+ * edge to uncover — and on a phone that reads as the map drifting for no reason. It also
+ * matters beyond the gesture: any pan marks the camera as player-controlled, after which the
+ * map stops re-fitting itself for the rest of the session.
+ *
+ * A hair of tolerance because a snapped scale times a whole-tile world rarely lands exactly
+ * on the viewport size, and a sub-pixel overhang is not something a thumb can chase.
+ */
+export function fieldOverflows(
+  map: LevelMap,
+  scale: number,
+  viewW: number,
+  viewH: number,
+): boolean {
+  const world = worldSize(map);
+  return world.width * scale > viewW + 0.5 || world.height * scale > viewH + 0.5;
+}
+
 /** Puts the middle of the map in the middle of the screen. */
 export function centreOn(camera: Camera, map: LevelMap, viewW: number, viewH: number): void {
   const world = worldSize(map);

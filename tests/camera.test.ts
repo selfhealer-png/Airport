@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampCamera,
   createCamera,
+  fieldOverflows,
   fitScale,
   screenToTile,
   snapScale,
@@ -119,5 +120,45 @@ describe('screenToTile', () => {
   it('accounts for the camera offset', () => {
     const camera = { x: 160, y: 320, scale: 2 };
     expect(screenToTile(camera, 0, 0)).toEqual({ x: 10, y: 20 });
+  });
+});
+
+/**
+ * Whether a drag may pan.
+ *
+ * The map now fits a phone screen at the default zoom, so panning could only nudge it off
+ * centre — and any pan marks the camera player-controlled, after which it never re-fits
+ * itself again. These pin the rule that decides it, headlessly: the browser cannot be
+ * trusted for this, because a backgrounded tab throttles `requestAnimationFrame` and the
+ * canvas simply stops redrawing.
+ */
+describe('fieldOverflows', () => {
+  const map = LEVEL_MEADOW;
+  const world = { w: map.width * 16, h: map.height * 16 };
+
+  it('is false when the whole field fits, so a drag cannot move it', () => {
+    expect(fieldOverflows(map, 1, world.w + 10, world.h + 10)).toBe(false);
+  });
+
+  it('is true when the field is taller than the screen', () => {
+    expect(fieldOverflows(map, 1, world.w + 10, world.h - 10)).toBe(true);
+  });
+
+  it('is true when the field is wider than the screen', () => {
+    expect(fieldOverflows(map, 1, world.w - 10, world.h + 10)).toBe(true);
+  });
+
+  it('turns panning back on once the player zooms in', () => {
+    // The pair that matters: locked at the fitted zoom, unlocked after a pinch. If zoom did
+    // not unlock panning, zooming in would strand the player looking at a corner.
+    expect(fieldOverflows(map, 1, world.w, world.h)).toBe(false);
+    expect(fieldOverflows(map, 4 / 3, world.w, world.h)).toBe(true);
+  });
+
+  it('tolerates a sub-pixel overhang rather than unlocking a drag for it', () => {
+    // A snapped scale over a whole-tile world rarely lands exactly on the viewport, and a
+    // fraction of a pixel is not something a thumb can chase.
+    expect(fieldOverflows(map, 1, world.w - 0.4, world.h - 0.4)).toBe(false);
+    expect(fieldOverflows(map, 1, world.w - 2, world.h - 2)).toBe(true);
   });
 });

@@ -19,6 +19,15 @@ export interface PointerHandlers {
    * down, so releasing a tool mid-drag cannot strand the gesture.
    */
   isBuilding?(): boolean;
+  /**
+   * Whether a one-finger drag may move the camera.
+   *
+   * False when the whole field already fits on screen: there is nothing off the edge to
+   * uncover, so a pan can only nudge the map away from centre and leave it there. On a phone
+   * that reads as the map drifting for no reason. Pinch-to-zoom is not gated by this — see
+   * the note at the pinch branch.
+   */
+  canPan?(): boolean;
   onBuildStart?(tile: TileIndex): void;
   onBuildMove?(tile: TileIndex): void;
   onBuildEnd?(): void;
@@ -109,7 +118,7 @@ export function attachPointerControls(
     if (pointers.size === 1) {
       if (building) {
         handlers.onBuildMove?.(tileAt(x, y));
-      } else {
+      } else if (handlers.canPan?.() !== false) {
         camera.x -= dx / camera.scale;
         camera.y -= dy / camera.scale;
         handlers.onCameraMoved?.();
@@ -117,6 +126,9 @@ export function attachPointerControls(
       return;
     }
 
+    // Pinch is deliberately NOT gated on `canPan`. Panning unlocks only once the field is
+    // bigger than the screen, so gating the zoom too would make that state unreachable and
+    // kill zooming outright.
     if (pointers.size === 2 && pinchStartDistance > 0) {
       const [a, b] = [...pointers.values()] as [ActivePointer, ActivePointer];
       const ratio = distance(a, b) / pinchStartDistance;

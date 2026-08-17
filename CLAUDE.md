@@ -378,10 +378,31 @@ against `.drawer-panel` and float above it, over the map. Two consequences to ke
 - The panel is classed `drawer-panel` rather than selected as `#drawer > div`, because the day
   bar replaces it in the same host while a day runs and must not be floated.
 
-Verified by pixel-comparing the canvas across closed/open/armed: identical, so the camera
-provably does not move. Starting a day still changes the drawer's height by about 40px, since
-the day bar is taller than the planning bar — that is a single recentre at day start with no
-zoom change on a phone, and is left alone.
+**The hint stays in layout and goes `visibility: hidden` when empty.** Floating it was the
+first attempt and it was worse: it then sat over the bottom of the field, hiding the very map
+it was telling the player to drag a runway onto, with no way to dismiss it. Only `.drawer-body`
+floats. `visibility` rather than `display` because the space it holds must never change.
+
+**`#drawer` carries a `min-height`** so the planning panel and the day bar occupy the same
+space. Without it the map area changed the moment a day started and the field re-centred. The
+number is measured (bar 61 + hint 44 + gap 8) — re-measure it if either bar changes shape.
+
+**Do not verify any of this by comparing canvas pixels in a headless browser tab.** A
+backgrounded tab throttles `requestAnimationFrame` to a stop, so the canvas is simply never
+redrawn and every frame compares equal — which reads as "the camera did not move" whatever the
+truth is. Layout measurements (`getBoundingClientRect`) are unaffected and are the reliable
+signal; anything about the camera belongs in `tests/camera.test.ts`.
+
+### Panning is only allowed when there is something off screen
+
+`fieldOverflows()` in `render/camera.ts` gates the one-finger drag, via `PointerHandlers.canPan`.
+At the fitted zoom the whole field is on screen, so a pan could only shove it off centre and
+leave it there — and worse, any pan sets `framed`, after which the map never re-fits itself
+again for the rest of the session. That one flag is why a stray drag used to poison every later
+layout change.
+
+**Pinch is deliberately not gated.** Panning unlocks only once the field is bigger than the
+screen, so gating the zoom too would make that state unreachable and kill zooming outright.
 
 ### Undo, and the collapsed drawer
 
