@@ -1,4 +1,5 @@
 import { levelById } from '@/content/levels';
+import { scenarioById } from '@/content/scenarios';
 import { createAirport } from '@/sim/airport';
 import type {
   FacilityType,
@@ -25,6 +26,11 @@ export const SNAPSHOT_VERSION = 8;
 export interface Snapshot {
   readonly version: number;
   readonly levelId: string;
+  /**
+   * The scenario this game came from, if any. Absent for an ordinary campaign, so an old save
+   * reads as one without needing a version of its own.
+   */
+  readonly scenarioId?: string;
   readonly day: number;
   readonly cash: number;
   readonly seed: number;
@@ -86,6 +92,7 @@ export function toSnapshot(state: GameState): Snapshot {
   return {
     version: SNAPSHOT_VERSION,
     levelId: airport.map.id,
+    ...(state.scenarioId ? { scenarioId: state.scenarioId } : {}),
     day: state.day,
     cash: state.cash,
     seed: state.seed,
@@ -229,6 +236,12 @@ export function fromSnapshot(raw: unknown): GameState | null {
     day: Math.max(1, Math.floor(data.day)),
     phase: 'planning',
     current: null,
+    // Rejected rather than trusted if it names a scenario that no longer exists: the layout
+    // is still perfectly playable, it just stops claiming to be somebody's scenario.
+    scenarioId:
+      typeof data.scenarioId === 'string' && scenarioById(data.scenarioId)
+        ? data.scenarioId
+        : null,
     seed: data.seed,
     // Tolerated rather than required: the service record is a scoreboard, so a save missing
     // it should start counting from zero, not be thrown away.
@@ -256,6 +269,7 @@ export function restoreInto(target: GameState, raw: unknown): boolean {
   target.day = restored.day;
   target.landedTotal = restored.landedTotal;
   target.scheduledTotal = restored.scheduledTotal;
+  target.scenarioId = restored.scenarioId;
   // `target.seed` is deliberately left untouched. This was safe by construction while undo
   // was the only caller — a snapshot could only ever be the same game's own history, so its
   // seed always matched. `enterLevel()` in `main.ts` now also calls this, restoring a

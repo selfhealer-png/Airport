@@ -1,5 +1,6 @@
 import { LEVELS } from '@/content/levels';
-import { isUnlocked } from '@/save/progress';
+import { SCENARIOS, type Scenario } from '@/content/scenarios';
+import { isScenarioCompleted, isUnlocked } from '@/save/progress';
 import type { LevelMap } from '@/sim/types';
 
 /**
@@ -19,6 +20,8 @@ export type MenuRowState = 'locked' | 'start' | 'continue' | 'replay';
 export interface CurrentGame {
   readonly levelId: string;
   readonly day: number;
+  /** Set when the game in progress came from a scenario rather than the campaign. */
+  readonly scenarioId: string | null;
 }
 
 export interface MenuRow {
@@ -45,7 +48,9 @@ export function menuRows(
 ): MenuRow[] {
   return levels.map((level, index) => {
     const isCompleted = completed.includes(level.id);
-    const holdsGame = current?.levelId === level.id;
+    // A scenario borrows a level's map, so matching on the level alone would light "Continue"
+    // on the campaign row while the game in progress is somebody else's airport.
+    const holdsGame = current?.levelId === level.id && current.scenarioId === null;
 
     if (!isUnlocked(level.id, completed)) {
       // `exactOptionalPropertyTypes` is on, so an absent field is omitted, never undefined.
@@ -82,8 +87,65 @@ export function menuRows(
   });
 }
 
+/**
+ * A scenario row.
+ *
+ * Deliberately not a `MenuRow`: scenarios are never locked, so the state a level row spends
+ * most of its fields describing does not apply, and folding them together would mean a
+ * `locked` case that can never happen and an `unlockedBy` that is always absent.
+ */
+export interface ScenarioRow {
+  readonly scenarioId: string;
+  readonly name: string;
+  readonly brief: string;
+  readonly state: 'start' | 'continue' | 'replay';
+  readonly completed: boolean;
+  readonly confirms: boolean;
+  readonly day?: number;
+}
+
+/**
+ * Scenarios are side content: always open, and finishing one never unlocks a level.
+ *
+ * That is the whole reason they are tracked under their own namespace in `save/progress.ts`.
+ * A player who wants the campaign should not have to play these, and a player who only wants
+ * these should not have to grind the campaign first.
+ */
+export function scenarioRows(
+  scenarios: readonly Scenario[],
+  completed: readonly string[],
+  current: CurrentGame | null,
+): ScenarioRow[] {
+  return scenarios.map((scenario) => {
+    const isCompleted = isScenarioCompleted(completed, scenario.id);
+    const holdsGame = current?.scenarioId === scenario.id;
+
+    if (holdsGame && current) {
+      return {
+        scenarioId: scenario.id,
+        name: scenario.name,
+        brief: scenario.brief,
+        state: 'continue' as const,
+        completed: isCompleted,
+        confirms: false,
+        day: current.day,
+      };
+    }
+
+    return {
+      scenarioId: scenario.id,
+      name: scenario.name,
+      brief: scenario.brief,
+      state: isCompleted ? ('replay' as const) : ('start' as const),
+      completed: isCompleted,
+      confirms: current !== null,
+    };
+  });
+}
+
 export interface MenuHandlers {
   onPlay(levelId: string): void;
+  onPlayScenario(scenarioId: string): void;
   onResetEverything(): void;
   /** Fired by the hidden tap gesture on the title. See `createMenu`. */
   onUnlockAll(): void;
@@ -247,22 +309,43 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
       panel.append(button);
     }
 
-    // Visible rather than absent, so it reads as a promise instead of a gap.
-    const scenarios = document.createElement('p');
-    scenarios.className = 'menu-heading';
-    scenarios.textContent = 'Scenarios';
+    const scenariosHeading = document.createElement('p');
+    scenariosHeading.className = 'menu-heading';
+    scenariosHeading.textContent = 'Scenarios';
+    panel.append(scenariosHeading);
 
-    const soon = document.createElement('button');
-    soon.type = 'button';
-    soon.className = 'menu-row';
-    soon.disabled = true;
-    const soonName = document.createElement('span');
-    soonName.className = 'menu-row-name';
-    soonName.textContent = 'Scenarios';
-    const soonState = document.createElement('span');
-    soonState.className = 'menu-row-state';
-    soonState.textContent = 'Coming later';
-    soon.append(soonName, soonState);
+    for (const row of scenarioRows(SCENARIOS, completed, current)) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'menu-row';
+      if (row.completed) button.classList.add('is-completed');
+
+      const name = document.createElement('span');
+      name.className = 'menu-row-name';
+      name.textContent = row.name;
+
+      const state = document.createElement('span');
+      state.className = 'menu-row-state';
+      state.textContent =
+        row.state === 'continue' ? `Continue — day ${row.day ?? 1}` : row.brief;
+
+      button.append(name, state);
+      button.addEventListener('click', () => {
+        if (!row.confirms || armed === row.scenarioId) {
+          disarm();
+          handlers.onPlayScenario(row.scenarioId);
+          return;
+        }
+        armed = row.scenarioId;
+        render(completed, current);
+        armedTimer = setTimeout(() => {
+          disarm();
+          render(completed, current);
+        }, 4000);
+      });
+
+      panel.append(button);
+    }
 
     const reset = document.createElement('button');
     reset.type = 'button';
@@ -284,7 +367,7 @@ export function createMenu(root: HTMLElement, handlers: MenuHandlers): Menu {
       handlers.onResetEverything();
     });
 
-    panel.append(scenarios, soon, reset);
+    panel.append(reset);
     root.replaceChildren(panel);
   };
 

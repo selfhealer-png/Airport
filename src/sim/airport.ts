@@ -172,6 +172,7 @@ export function createGame(map: LevelMap, seed = 1): GameState {
     day: 1,
     phase: 'planning',
     current: null,
+    scenarioId: null,
     seed,
     landedTotal: 0,
     scheduledTotal: 0,

@@ -27,7 +27,14 @@ import { showDebrief } from '@/ui/debrief';
 import { CAMPAIGN_DAYS } from '@/content/schedule';
 import { commitPlacement, isLineTool, resolvePlacement, type Placement } from '@/ui/placement';
 import { createMenu, type CurrentGame } from '@/ui/menu';
-import { clearProgress, loadProgress, markCompleted, unlockAll } from '@/save/progress';
+import {
+  clearProgress,
+  loadProgress,
+  markCompleted,
+  markScenarioCompleted,
+  unlockAll,
+} from '@/save/progress';
+import { scenarioById, startScenario } from '@/content/scenarios';
 import { toSnapshot, restoreInto } from '@/save/snapshot';
 import { levelById } from '@/content/levels';
 import type { GamePhase, TileIndex } from '@/sim/types';
@@ -418,13 +425,18 @@ function start(): void {
     // cookies, private-mode quota — `loadGame()` is permanently null, and a menu built from it
     // would offer "Start" for the airport the player is in the middle of building, then replace
     // it on a single unconfirmed tap.
-    if (hasLiveGame) return { levelId: state.airport.map.id, day: state.day };
+    if (hasLiveGame) {
+      return { levelId: state.airport.map.id, day: state.day, scenarioId: state.scenarioId };
+    }
     const saved = loadGame();
-    return saved ? { levelId: saved.airport.map.id, day: saved.day } : null;
+    return saved
+      ? { levelId: saved.airport.map.id, day: saved.day, scenarioId: saved.scenarioId }
+      : null;
   };
 
   const menu = createMenu(menuHost, {
     onPlay: (levelId) => enterLevel(levelId),
+    onPlayScenario: (scenarioId) => enterScenario(scenarioId),
     onResetEverything: () => {
       wiping = true;
       clearGame();
@@ -494,6 +506,40 @@ function start(): void {
     showPlanning();
   }
 
+  /**
+   * Starts a scenario, or carries on the one already in progress.
+   *
+   * The same shape as `enterLevel`, and for the same reason it goes through `toSnapshot`:
+   * entering and loading must take one path, so a scenario cannot describe a game that the
+   * save system would then refuse. The saved game is only resumed when it is *this* scenario
+   * — a campaign save on the same map is somebody else's airport.
+   */
+  function enterScenario(scenarioId: string): void {
+    const scenario = scenarioById(scenarioId);
+    if (!scenario) return;
+
+    const saved = loadGame();
+    const fresh = startScenario(scenario);
+    if (!fresh) return;
+
+    const snapshot =
+      saved && saved.scenarioId === scenarioId ? toSnapshot(saved) : toSnapshot(fresh);
+    if (!restoreInto(state, snapshot)) return;
+
+    history.clear();
+    drawer.clearSelection();
+    placement = null;
+    framed = false;
+    relayout();
+    accumulator = 0;
+
+    inMenu = false;
+    hasLiveGame = true;
+    menuHost.hidden = true;
+    saveGame(state);
+    showPlanning();
+  }
+
   function beginDay(): void {
     drawer.clearSelection();
     placement = null;
@@ -545,7 +591,12 @@ function start(): void {
       () => {
         // Recorded on dismissal of day 50, and idempotent: the campaign carries on as a
         // sandbox afterwards, so every later day satisfies this too.
-        if (finalDay) markCompleted(state.airport.map.id);
+        if (finalDay) {
+          // A scenario borrows a level's map but is not that level: finishing one must never
+          // unlock the next campaign field. `markScenarioCompleted` namespaces it.
+          if (state.scenarioId) markScenarioCompleted(state.scenarioId);
+          else markCompleted(state.airport.map.id);
+        }
         state.day += 1;
         state.phase = 'planning';
         state.current = null;
@@ -615,7 +666,13 @@ function start(): void {
       shownCash = state.cash;
     }
     cash.textContent = `£${state.cash.toLocaleString()}`;
-    title.textContent = state.airport.map.name;
+    /*
+     * A scenario names itself, not the map it borrows. Both scenarios run on fields the
+     * player has their own campaign on, so showing the level's name would leave no way to
+     * tell which of the two games is on screen.
+     */
+    const scenario = state.scenarioId ? scenarioById(state.scenarioId) : undefined;
+    title.textContent = scenario?.name ?? state.airport.map.name;
     dayText.textContent = `Day ${state.day}`;
   }
 

@@ -412,6 +412,15 @@ export interface GameState {
   current: DayState | null;
   seed: number;
   /**
+   * The scenario this game came from, or null for an ordinary campaign.
+   *
+   * Carried on the state rather than worked out from the layout because the menu has to know
+   * which row the game in progress belongs to. Without it, reloading a scenario would offer
+   * "Continue" against the *level* it borrows and load somebody else's airport under that
+   * level's name.
+   */
+  scenarioId: string | null;
+  /**
    * The campaign's service record: aeroplanes that got down, against aeroplanes that were
    * booked in. Purely descriptive — the debrief reports it and nothing reads it back into the
    * schedule, which is the whole point of the fixed path. Cash cannot do this job because

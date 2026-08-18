@@ -49,6 +49,24 @@ export function isUnlocked(levelId: string, completed: readonly string[]): boole
   return previous === undefined || completed.includes(previous.id);
 }
 
+/**
+ * Scenario completions live in the same list as level completions, namespaced.
+ *
+ * One list rather than two because there is one question being asked — what has this player
+ * finished — and a second key would need its own version, its own parse and its own reset.
+ * The prefix is what stops a scenario ever unlocking a level: `isUnlocked` matches on level
+ * ids, and a namespaced entry can never be one.
+ */
+const SCENARIO_PREFIX = 'scenario:';
+
+export function scenarioKey(scenarioId: string): string {
+  return `${SCENARIO_PREFIX}${scenarioId}`;
+}
+
+export function isScenarioCompleted(completed: readonly string[], scenarioId: string): boolean {
+  return completed.includes(scenarioKey(scenarioId));
+}
+
 /** Every level's id — what "unlocked" looks like when nothing is locked. */
 export function everyLevelId(): string[] {
   return LEVELS.map((level) => level.id);
@@ -72,6 +90,11 @@ export function loadProgress(): string[] {
   } catch {
     return [];
   }
+}
+
+/** Records a finished scenario. Never unlocks a level — see `SCENARIO_PREFIX`. */
+export function markScenarioCompleted(scenarioId: string): void {
+  markCompleted(scenarioKey(scenarioId));
 }
 
 export function markCompleted(levelId: string): void {
