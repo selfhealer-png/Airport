@@ -3,6 +3,7 @@ import {
   BUILD_TILE_PX,
   buildZoom,
   clampCamera,
+  centreOnTile,
   createCamera,
   fieldOverflows,
   fitScale,
@@ -224,5 +225,30 @@ describe('buildZoom', () => {
     // Zooming in for precision is only usable because two fingers can pan; this pins that the
     // build zoom actually reaches the state where panning unlocks.
     expect(fieldOverflows(LEVEL_MEADOW, buildZoom(3), 390, 606)).toBe(true);
+  });
+});
+
+describe('centring on a tile', () => {
+  const map = LEVEL_MEADOW;
+
+  it('puts the tile in the middle of the view', () => {
+    const camera = createCamera();
+    camera.scale = 1;
+    centreOnTile(camera, map, { x: 15, y: 20 }, 360, 600);
+
+    // The tile's centre in world pixels, less half a screen, is where the camera should sit.
+    expect(camera.x).toBeCloseTo((15 + 0.5) * TILE_PX - 180, 5);
+    expect(camera.y).toBeCloseTo((20 + 0.5) * TILE_PX - 300, 5);
+  });
+
+  it('refuses to run off the edge of the field', () => {
+    // Centring on a corner tile would show ground that does not exist, so it clamps — the
+    // caller gets the closest legal view rather than a view with nothing in half of it.
+    const camera = createCamera();
+    camera.scale = 1;
+    centreOnTile(camera, map, { x: 0, y: 0 }, 360, 600);
+
+    expect(camera.x).toBeGreaterThanOrEqual(0);
+    expect(camera.y).toBeGreaterThanOrEqual(0);
   });
 });

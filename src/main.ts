@@ -4,6 +4,7 @@ import { Renderer, type BuildPreview } from '@/render/renderer';
 import {
   buildZoom,
   centreOn,
+  centreOnTile,
   clampCamera,
   createCamera,
   deviceRatio,
@@ -35,6 +36,7 @@ import {
   unlockAll,
 } from '@/save/progress';
 import { scenarioById, startScenario } from '@/content/scenarios';
+import { currentStep, tutorialApplies, type TutorialStep } from '@/content/tutorial';
 import { toSnapshot, restoreInto } from '@/save/snapshot';
 import { levelById } from '@/content/levels';
 import type { GamePhase, TileIndex } from '@/sim/types';
@@ -151,6 +153,19 @@ function start(): void {
     framedByBuild = true;
     const { width, height } = renderer.viewport;
     zoomAt(camera, width / 2, height / 2, target, deviceRatio());
+
+    /*
+     * If the tutorial is pointing somewhere, zoom in *on that*.
+     *
+     * Zooming about the viewport centre is right once the player has framed what they want,
+     * but on the very first build there is nothing framed — the map is simply fitted, so the
+     * centre of the screen is the middle of an empty field. The outlined tiles would scroll
+     * off, and the game would say "drag out a runway here" and then hide "here".
+     */
+    const teaching = tutorialStep()?.where(state) ?? [];
+    const focus = teaching[Math.floor(teaching.length / 2)];
+    if (focus) centreOnTile(camera, state.airport.map, focus, width, height);
+
     clampCamera(camera, state.airport.map, width, height);
   }
 
@@ -211,7 +226,27 @@ function start(): void {
     toggleButton.classList.toggle('is-selected', expanded || armed !== null);
 
     const { text, warnings } = drawer.headline(state);
-    const message = armed ? `Placing ${armed.toLowerCase()} — aim with the crosshair; two fingers to move the map.` : text;
+    /*
+     * Three things want the hint, and the tutorial outranks the armed tool.
+     *
+     * That ordering was the other way round at first and it was wrong in exactly the place it
+     * mattered: arming the grass strip replaced "drag out a runway here" with "placing grass
+     * strip", so the instruction vanished the instant the player acted on it, and the next
+     * step never appeared while a tool stayed armed. The armed reminder is about *aiming*, and
+     * the crosshair already says that; the step is about what to build, which nothing else
+     * says at all.
+     *
+     * It reuses the hint rather than adding a panel of its own quite deliberately. The hint is
+     * already in layout, already sized for a phone, and already proven not to cover the map —
+     * a floating tutorial panel over the field you are being told to build on is a mistake
+     * this project has already shipped once.
+     */
+    const teaching = tutorialStep();
+    const message =
+      teaching?.text ??
+      (armed
+        ? `Placing ${armed.toLowerCase()} — aim with the crosshair; two fingers to move the map.`
+        : text);
     // The hint is the collapsed view's whole teaching channel, so it is only hidden when
     // there is genuinely nothing to say.
     /*
@@ -227,6 +262,17 @@ function start(): void {
     hint.classList.toggle('is-warn', !armed && warnings > 0);
     toggleButton.classList.toggle('has-warnings', !expanded && !armed && warnings > 0);
   };
+
+  /**
+   * The tutorial step to show, or null.
+   *
+   * There is no "skip" control and none is needed: the tutorial only ever appears on day one
+   * of a fresh campaign, and the last step is "open the airport", so pressing the button
+   * already on screen is the skip. Nothing to persist either — day one happens once per
+   * campaign, and starting a new one should teach it again.
+   */
+  const tutorialStep = (): TutorialStep | null =>
+    tutorialApplies(state) ? currentStep(state) : null;
 
   const setExpanded = (next: boolean): void => {
     expanded = next;
@@ -755,7 +801,13 @@ function start(): void {
         // matters more since groundworks arrived: felling and bridging refund nothing, so
         // undo is the only way back from a misplaced tunnel.
         paintShell();
-        report(tool.kind === 'demolish' ? 'Removed.' : 'Built.');
+        /*
+         * During the tutorial the next instruction beats the receipt. What was built is
+         * already on the map — "Built." tells the player nothing they cannot see, and it would
+         * otherwise sit there as the last word until they happened to touch something else.
+         */
+        const next = tutorialStep();
+        report(next ? next.text : tool.kind === 'demolish' ? 'Removed.' : 'Built.');
         saveGame(state);
       } else if (placement) {
         report(describe(placement));
@@ -822,7 +874,10 @@ function start(): void {
           ...(crosshair ? { aim: crosshair } : {}),
         }
       : undefined;
-    renderer.draw(state, camera, preview);
+    // Only while planning: the outline is about where to build, and mid-day it would be
+    // pointing at ground nobody can touch.
+    const teaching = state.phase === 'planning' ? tutorialStep() : null;
+    renderer.draw(state, camera, preview, teaching?.where(state));
     requestAnimationFrame(frame);
   };
 

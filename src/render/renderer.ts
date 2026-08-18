@@ -122,7 +122,19 @@ export class Renderer {
     return true;
   }
 
-  draw(state: GameState, camera: Camera, preview?: BuildPreview): void {
+  draw(
+    state: GameState,
+    camera: Camera,
+    preview?: BuildPreview,
+    /**
+     * Tiles the tutorial is pointing at.
+     *
+     * A separate argument rather than a field on `BuildPreview`, because the two are alive at
+     * different times and for different reasons: a preview exists only while a finger is
+     * down, and this is on screen precisely when nothing is being dragged yet.
+     */
+    highlight?: readonly TileIndex[],
+  ): void {
     const { ctx } = this;
     const { width, height, dpr } = this.viewport;
     const airport = state.airport;
@@ -255,6 +267,32 @@ export class Renderer {
 
     // 5. Aircraft, above everything on the ground.
     if (state.current) this.drawAircraft(state, camera, tileScreen, dpr);
+
+    /*
+     * 6a. Where the tutorial is pointing.
+     *
+     * Under the preview, so a drag over the suggested tiles reads as the drag rather than as
+     * two overlapping hints. Dashed and unfilled: it is a suggestion about empty ground, and
+     * a solid fill would look like something already built there.
+     */
+    if (highlight && highlight.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = PALETTE.y;
+      ctx.lineWidth = 2 / dpr;
+      ctx.setLineDash([6 / dpr, 4 / dpr]);
+      for (const tile of highlight) {
+        if (!onScreen(tile.x, tile.y)) continue;
+        const left = screenX(tile.x);
+        const top = screenY(tile.y);
+        ctx.strokeRect(
+          left + ctx.lineWidth / 2,
+          top + ctx.lineWidth / 2,
+          screenX(tile.x + 1) - left - ctx.lineWidth,
+          screenY(tile.y + 1) - top - ctx.lineWidth,
+        );
+      }
+      ctx.restore();
+    }
 
     // 6. The build being dragged out, tinted by whether it is legal.
     if (preview) {

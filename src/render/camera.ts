@@ -1,5 +1,5 @@
 import { TILE_PX } from '@/sprites/palette';
-import type { LevelMap } from '@/sim/types';
+import type { LevelMap, TileIndex } from '@/sim/types';
 
 /**
  * Maps between world space (sprite pixels) and screen space (CSS pixels).
@@ -146,6 +146,25 @@ export function centreOn(camera: Camera, map: LevelMap, viewW: number, viewH: nu
   const world = worldSize(map);
   camera.x = world.width / 2 - viewW / camera.scale / 2;
   camera.y = world.height / 2 - viewH / camera.scale / 2;
+  clampCamera(camera, map, viewW, viewH);
+}
+
+/**
+ * Centres the view on one tile, then clamps.
+ *
+ * Needed because zooming in has to be able to keep a *particular* place on screen rather than
+ * whatever happened to be in the middle. The tutorial outlines a spot and then arming a tool
+ * zooms in — without this the game says "build it here" and immediately hides "here".
+ */
+export function centreOnTile(
+  camera: Camera,
+  map: LevelMap,
+  tile: TileIndex,
+  viewW: number,
+  viewH: number,
+): void {
+  camera.x = (tile.x + 0.5) * TILE_PX - viewW / camera.scale / 2;
+  camera.y = (tile.y + 0.5) * TILE_PX - viewH / camera.scale / 2;
   clampCamera(camera, map, viewW, viewH);
 }
 
