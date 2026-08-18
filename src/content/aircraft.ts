@@ -58,6 +58,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 3,
     requiresFuelFarm: false,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   light: {
     id: 'light',
@@ -77,6 +78,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 3,
     requiresFuelFarm: false,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   airtaxi: {
     id: 'airtaxi',
@@ -96,6 +98,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 3,
     requiresFuelFarm: false,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   utility: {
     id: 'utility',
@@ -115,6 +118,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 3,
     requiresFuelFarm: false,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   bush: {
     id: 'bush',
@@ -134,6 +138,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 3,
     requiresFuelFarm: false,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   commuter: {
     id: 'commuter',
@@ -153,6 +158,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 3,
     requiresFuelFarm: false,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   feeder: {
     id: 'feeder',
@@ -172,6 +178,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 3,
     requiresFuelFarm: false,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   regional: {
     id: 'regional',
@@ -191,6 +198,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 4,
     requiresFuelFarm: true,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   'regional-x': {
     id: 'regional-x',
@@ -210,6 +218,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 4,
     requiresFuelFarm: true,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   narrowbody: {
     id: 'narrowbody',
@@ -229,6 +238,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 4,
     requiresFuelFarm: true,
     requiresFireStation: true,
+    requiresBorderControl: false,
   },
   'narrowbody-x': {
     id: 'narrowbody-x',
@@ -248,6 +258,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 4,
     requiresFuelFarm: true,
     requiresFireStation: true,
+    requiresBorderControl: false,
   },
   freighter: {
     id: 'freighter',
@@ -269,6 +280,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 4,
     requiresFuelFarm: true,
     requiresFireStation: true,
+    requiresBorderControl: false,
   },
   widebody: {
     id: 'widebody',
@@ -288,6 +300,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 5,
     requiresFuelFarm: true,
     requiresFireStation: true,
+    requiresBorderControl: true,
   },
   superheavy: {
     id: 'superheavy',
@@ -307,6 +320,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 5,
     requiresFuelFarm: true,
     requiresFireStation: true,
+    requiresBorderControl: true,
   },
   // --- Military. Separate runway, no passengers, no use for the terminal. ---
   fighter: {
@@ -329,6 +343,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 3,
     requiresFuelFarm: true,
     requiresFireStation: true,
+    requiresBorderControl: false,
   },
   transport: {
     id: 'transport',
@@ -348,6 +363,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 4,
     requiresFuelFarm: true,
     requiresFireStation: true,
+    requiresBorderControl: false,
   },
   /*
    * --- Rotorcraft. No runway, no taxiway, no stand: the pad is all three. ---
@@ -379,6 +395,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 4,
     requiresFuelFarm: false,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   'heli-heavy': {
     id: 'heli-heavy',
@@ -399,6 +416,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     // The gate that makes a second pad a decision rather than a formality.
     requiresFuelFarm: true,
     requiresFireStation: false,
+    requiresBorderControl: false,
   },
   heavylift: {
     id: 'heavylift',
@@ -418,6 +436,7 @@ export const AIRCRAFT_CLASSES: Readonly<Record<AircraftClassId, AircraftClass>> 
     departSeconds: 5,
     requiresFuelFarm: true,
     requiresFireStation: true,
+    requiresBorderControl: false,
   },
 };
 

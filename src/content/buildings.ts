@@ -1,3 +1,5 @@
+import type { FacilityType } from '@/sim/types';
+
 /**
  * Facility levels and their effects. Balance data only.
  */
@@ -21,73 +23,104 @@ export const TOWER_LEVELS: readonly TowerLevel[] = [
   { level: 3, cost: 45_000, movements: 4, stackCapacity: 9, schedulePreview: 3 },
 ];
 
-export interface TerminalLevel {
-  readonly level: number;
-  readonly cost: number;
-  /** Multiplier applied to every landing fee collected. */
-  readonly fareMultiplier: number;
-  /**
-   * Passengers this terminal can process in a day. The second axis of the whole game: a
-   * longer runway lets a bigger aeroplane land, and this is what decides whether the people
-   * on board are worth anything once it has.
-   */
-  readonly passengerCapacity: number;
-  /** How many retail units the terminal has room for. */
-  readonly shopSlots: number;
-}
-
 /**
- * Level 0 is a windsock and a gate in a hedge: it will take a handful of people off a light
- * aircraft and nothing more.
- */
-export const TERMINAL_LEVELS: readonly TerminalLevel[] = [
-  { level: 0, cost: 0, fareMultiplier: 1, passengerCapacity: 60, shopSlots: 0 },
-  { level: 1, cost: 900, fareMultiplier: 1.15, passengerCapacity: 220, shopSlots: 1 },
-  { level: 2, cost: 5_500, fareMultiplier: 1.3, passengerCapacity: 560, shopSlots: 2 },
-  { level: 3, cost: 26_000, fareMultiplier: 1.45, passengerCapacity: 1_300, shopSlots: 3 },
-  { level: 4, cost: 110_000, fareMultiplier: 1.6, passengerCapacity: 2_600, shopSlots: 4 },
-];
-
-/**
- * What each *additional* terminal costs, as a multiple of a level-1 terminal, indexed by how
- * many the airport already has.
+ * The terminal is a **footprint you extend**, not a building with a level.
  *
- * Capacity pools across terminals, so without this a second level-1 building (£900) is a far
- * cheaper way to buy 220 passengers a day than upgrading to level 2 (£5,500) — and the whole
- * upgrade ladder becomes strictly worse than building sheds. Rising, so the fourth terminal
- * is a considered decision rather than loose change.
+ * The level ladder said everything about a terminal in one number, which made the biggest
+ * building in the game the least interesting decision on the map: tap upgrade, pay, done.
+ * Modules put the terminal back on the field — how many gates you can fit, where the baggage
+ * hall goes, whether you have the land for border control at all — and every one of them is
+ * a tile of ground you are not using for something else.
+ *
+ * A module works only as part of a terminal: road-served, and reachable from a road-served
+ * core through a chain of road-served modules. See `buildServices`.
  */
-export const ADDITIONAL_TERMINAL_COST_MULTIPLIER: readonly number[] = [1, 3, 6, 10];
+export const TERMINAL_MODULES: ReadonlySet<FacilityType> = new Set([
+  'gate-hall',
+  'baggage-hall',
+  'shop',
+  'border-control',
+]);
 
-export function towerLevel(level: number): TowerLevel {
-  return TOWER_LEVELS[Math.min(Math.max(level, 0), TOWER_LEVELS.length - 1)]!;
-}
+/**
+ * No terminal at all: a windsock and a gate in a hedge.
+ *
+ * A floor rather than zero, and it is load-bearing. It is what makes the opening days of a
+ * campaign pay for the first runway, and dropping it quietly breaks day one on every level.
+ */
+export const NO_TERMINAL_CAPACITY = 60;
 
-export function terminalLevel(level: number): TerminalLevel {
-  return TERMINAL_LEVELS[Math.min(Math.max(level, 0), TERMINAL_LEVELS.length - 1)]!;
-}
+/** A core with no modules bolted on: a shed with a desk in it. */
+export const TERMINAL_CORE_CAPACITY = 120;
 
-/** What a processed passenger is worth at the gate, before retail. */
+/** Passengers a day per gate hall. The terminal's whole capacity story is this number. */
+export const GATE_HALL_CAPACITY = 260;
+
+/** What a processed passenger is worth at the gate, before any module. */
 export const PASSENGER_FARE = 8;
 
 /**
- * Each shop's take, per passenger passing through the terminal.
+ * What each module adds to a passenger's worth.
  *
- * Kept modest because it stacks with the terminal's fare multiplier and with every passenger
- * of every flight: at four pounds a head with four shops and a doubling terminal, the late
- * campaign earned more in a day than everything on the map cost to build.
+ * Additive rather than multiplied, and deliberately modest. They stack across every passenger
+ * of every flight, and the last time retail compounded with a terminal multiplier the late
+ * campaign earned more in a day than everything on the map had cost to build. Under modules
+ * there is no build-versus-upgrade choice left to distort, so plain addition says all that
+ * needs saying.
+ *
+ * Both were a pound higher on the first pass and the fiftieth day finished on £1.1M. The
+ * trouble is that a rate per head multiplies against traffic that itself grows 150x across
+ * the campaign, so a shilling here is a fortune there — see `RETAIL_PER_GATE_HALLS` for the
+ * other half of the same fix.
  */
-export const SHOP_REVENUE_PER_PASSENGER = 3;
+export const BAGGAGE_REVENUE_PER_PASSENGER = 3;
+export const RETAIL_REVENUE_PER_PASSENGER = 2;
 
 /**
- * What one passenger is worth. Shops multiply the value of terminal capacity rather than
- * replacing it, so the two upgrades pull in the same direction instead of competing.
+ * What one processed passenger is worth.
  *
- * Takes the multiplier rather than a `TerminalLevel`, because with several terminals pooled
- * there is no single level to hand it — the rate is a capacity-weighted blend of all of them.
+ * Modules multiply the value of *capacity* rather than replacing it — a shop with no gate
+ * hall to fill it earns nothing, because nobody is walking past — so the two upgrades pull in
+ * the same direction instead of competing.
  */
-export function passengerRevenue(fareMultiplier: number, shops: number): number {
-  return (PASSENGER_FARE + shops * SHOP_REVENUE_PER_PASSENGER) * fareMultiplier;
+export function passengerRevenue(baggageHalls: number, retailUnits: number): number {
+  return (
+    PASSENGER_FARE +
+    baggageHalls * BAGGAGE_REVENUE_PER_PASSENGER +
+    retailUnits * RETAIL_REVENUE_PER_PASSENGER
+  );
+}
+
+/**
+ * How many gate halls one retail unit is allowed.
+ *
+ * One per hall was the first rule and it read beautifully — a concourse and its parade of
+ * shops — but nine gate halls then licensed nine shops, and retail earns on every passenger
+ * of every flight. Two keeps the tie between capacity and retail without letting retail
+ * become the whole economy: shops are still worth building, they are just not the reason to
+ * build a terminal.
+ */
+export const RETAIL_PER_GATE_HALLS = 2;
+
+/** How many retail units a terminal with this many gate halls may hold. */
+export function retailAllowance(gateHalls: number): number {
+  return Math.floor(gateHalls / RETAIL_PER_GATE_HALLS);
+}
+
+/**
+ * How much sooner a baggage hall frees the stand.
+ *
+ * This is what ties the terminal to apron throughput rather than only to money: without it,
+ * every terminal decision is "does this earn more", and the apron and the terminal never
+ * argue. Capped at three halls because past that the constraint is the apron itself, and an
+ * uncapped factor would eventually turn turnaround into a rounding error.
+ */
+export function baggageTurnaroundFactor(halls: number): number {
+  return 1 - 0.1 * Math.min(halls, 3);
+}
+
+export function towerLevel(level: number): TowerLevel {
+  return TOWER_LEVELS[Math.min(Math.max(level, 0), TOWER_LEVELS.length - 1)]!;
 }
 
 /*

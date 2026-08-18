@@ -2,8 +2,7 @@ import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import {
   certificationLevel,
   requiredCertification,
-  terminalLevel,
-  TERMINAL_LEVELS,
+  retailAllowance,
   towerLevel,
   TOWER_LEVELS,
 } from '@/content/buildings';
@@ -46,7 +45,14 @@ import {
 } from '@/sim/build';
 import { explainReason, runDay } from '@/sim/step';
 import { summariseDay } from '@/ui/debrief';
-import { STAND_RANK, SURFACE_RANK, type DayState, type GameState, type StandSize } from '@/sim/types';
+import {
+  STAND_RANK,
+  SURFACE_RANK,
+  type DayState,
+  type FacilityType,
+  type GameState,
+  type StandSize,
+} from '@/sim/types';
 
 /**
  * Headless campaign harness: plays the whole campaign against a competent-but-not-clever
@@ -112,13 +118,21 @@ const HELIPAD_X = 18;
 const HELIPAD_ROWS = [6, 8, 10, 12] as const;
 
 /**
- * Rows on the building column that terminals go on.
+ * Where the terminal starts, and how far down the building column it may grow.
  *
- * Several, because terminal capacity pools: once every terminal is at level 4 the only way
- * past 2,600 passengers a day is another building, and the late campaign books over three
- * thousand. Spaced so each one still has a free tile beside it for a shop.
+ * A terminal is a chain now, so it needs contiguous rows rather than scattered ones: each
+ * module has to touch the one before it, and each needs the service road beside it. Rows are
+ * filled top-down from the core, which makes adjacency automatic and means the road that
+ * `placeAt` lays already covers everything above.
+ *
+ * The support buildings were moved to the bottom of the column to make room. Eleven slots was
+ * not enough — the auto-player filled them with gate halls and retail and then had nowhere to
+ * put border control, so every widebody of the late campaign diverted. Twenty-two is more than
+ * the campaign can use, which is the point: running out of *column* is an artefact of the
+ * harness's layout, not a fact about the game.
  */
-const TERMINAL_ROWS = [8, 12, 16, 28] as const;
+const TERMINAL_ROW = 8;
+const TERMINAL_LAST_ROW = 30;
 const STAND_ROWS = [10, 13, 16, 19, 22, 25, 28] as const;
 
 /** Spends only if the check passes and the money is there. Returns whether it built. */
@@ -293,15 +307,11 @@ function addPad(state: GameState): boolean {
 
 /** Places a facility on the building row, with the road that switches it on. */
 function place(state: GameState, type: 'tower' | 'terminal' | 'fuel-farm' | 'fire-station'): void {
-  const row = { tower: 4, terminal: TERMINAL_ROWS[0], 'fuel-farm': 20, 'fire-station': 24 }[type];
+  const row = { tower: 4, terminal: TERMINAL_ROW, 'fuel-farm': 32, 'fire-station': 34 }[type];
   placeAt(state, type, row);
 }
 
-function placeAt(
-  state: GameState,
-  type: 'tower' | 'terminal' | 'fuel-farm' | 'fire-station',
-  row: number,
-): boolean {
+function placeAt(state: GameState, type: FacilityType, row: number): boolean {
   const built = tryBuild(checkFacility(state, type, BUILDING_X, row), (q) =>
     applyFacility(state, q, type, BUILDING_X, row),
   );
@@ -312,12 +322,19 @@ function placeAt(
   return true;
 }
 
-/** The next terminal, on the next free row of the building column. */
-function placeTerminal(state: GameState): boolean {
-  const row = TERMINAL_ROWS.find(
-    (r) => !state.airport.facilities.some((f) => f.x === BUILDING_X && f.y === r),
-  );
-  return row === undefined ? false : placeAt(state, 'terminal', row);
+/**
+ * Bolts one module onto the end of the terminal chain.
+ *
+ * Top-down from the core, so the new module always touches the last one and the road laid to
+ * reach it already serves everything above. Returns false when the column is full, which is
+ * the auto-player's version of running out of land.
+ */
+function extendTerminal(state: GameState, type: FacilityType): boolean {
+  for (let row = TERMINAL_ROW + 1; row <= TERMINAL_LAST_ROW; row++) {
+    if (state.airport.facilities.some((f) => f.x === BUILDING_X && f.y === row)) continue;
+    return placeAt(state, type, row);
+  }
+  return false;
 }
 
 /**
@@ -474,44 +491,43 @@ function plan(state: GameState): void {
   }
 
   /*
-   * Terminals: upgrade before the ceiling is hit, because a day spent turning people away is
-   * a day of income already lost — and once every terminal is maxed, build another.
+   * The terminal, built as a chain down the building column.
    *
-   * The order matters and is the point of the cost multiplier. Upgrading is tried first at
-   * every level, so a second building is what the auto-player reaches for when it has run out
-   * of ladder, not a cheaper substitute for climbing it.
+   * The order is the whole strategy and it is not the order the buildings appear in the
+   * drawer. Capacity first, because a passenger turned away is income already lost and no
+   * other module helps with it. Baggage next, because it buys apron throughput — which is the
+   * constraint a big terminal creates. Border control only when something is actually booked
+   * that needs it, since it is the dearest building in the game and pays nothing on its own.
+   * Retail last: it multiplies passenger income rather than creating any.
    */
-  const terminals = terminalsOf(state.airport);
-  const capacity = workingTerminalCapacity(state.airport, buildServices(state.airport));
-  if (terminals.length === 0) {
+  const terminalServices = buildServices(state.airport);
+  const capacity = workingTerminalCapacity(state.airport, terminalServices);
+  const modules = (type: FacilityType): number =>
+    state.airport.facilities.filter((f) => f.type === type).length;
+
+  const needsBorder = generateSchedule(state.day, state.seed).some(
+    (arrival) => aircraftClass(arrival.classId).requiresBorderControl,
+  );
+
+  if (terminalsOf(state.airport).length === 0) {
     place(state, 'terminal');
+  } else if (needsBorder && modules('border-control') === 0) {
+    // Ahead of capacity, dear as it is. An aeroplane that cannot land at all costs more than
+    // one that lands and loses half its passengers at the door.
+    extendTerminal(state, 'border-control');
   } else if (expected > capacity.passengerCapacity * 0.6) {
-    const upgradable = terminals.find((t) => t.level < TERMINAL_LEVELS.length - 1);
-    if (upgradable) {
-      tryBuild(checkUpgradeFacility(state, upgradable.id), (q) =>
-        applyUpgradeFacility(state, q, upgradable.id),
-      );
-    } else {
-      placeTerminal(state);
-    }
+    extendTerminal(state, 'gate-hall');
   }
 
-  // Shops last: they multiply passenger income rather than creating it.
-  const terminalNow = facilityOf(state.airport, 'terminal');
-  if (terminalNow && expected > 100) {
-    const slots = terminalLevel(terminalNow.level).shopSlots;
-    const spots = [
-      { x: terminalNow.x - 1, y: terminalNow.y },
-      { x: terminalNow.x, y: terminalNow.y - 1 },
-      { x: terminalNow.x, y: terminalNow.y + 1 },
-      { x: terminalNow.x + 1, y: terminalNow.y },
-    ];
-    for (const spot of spots) {
-      if (state.airport.facilities.filter((f) => f.type === 'shop').length >= slots) break;
-      tryBuild(checkFacility(state, 'shop', spot.x, spot.y), (q) =>
-        applyFacility(state, q, 'shop', spot.x, spot.y),
-      );
-    }
+  const gateHalls = modules('gate-hall');
+
+  // Three is where `baggageTurnaroundFactor` stops improving; buying a fourth is a donation.
+  if (gateHalls >= 2 && modules('baggage-hall') < 3) {
+    extendTerminal(state, 'baggage-hall');
+  }
+
+  if (expected > 100 && modules('shop') < retailAllowance(gateHalls)) {
+    extendTerminal(state, 'shop');
   }
 }
 
@@ -559,7 +575,11 @@ for (let day = 1; day <= days; day++) {
     `${state.airport.stands.length} stands, ` +
     `${state.airport.helipads.length} pads, ` +
     `${certificationLevel(state.airport.certification).name.replace('Category ', 'cat')}, ` +
-    `T${terminalsOf(state.airport).map((t) => t.level).join('+') || 0}/` +
+    `T${terminalsOf(state.airport).length}` +
+    `g${state.airport.facilities.filter((f) => f.type === 'gate-hall').length}` +
+    `b${state.airport.facilities.filter((f) => f.type === 'baggage-hall').length}` +
+    `s${state.airport.facilities.filter((f) => f.type === 'shop').length}` +
+    `${state.airport.facilities.some((f) => f.type === 'border-control') ? 'B' : ''}/` +
     `C${facilityOf(state.airport, 'tower')?.level ?? 0}]`);
   console.log(summarise(result));
   const running = result.handlingCost + result.certificationCost;

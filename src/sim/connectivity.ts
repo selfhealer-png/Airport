@@ -1,3 +1,4 @@
+import { TERMINAL_MODULES } from '@/content/buildings';
 import type { Airport, Facility, Helipad, Runway, Stand } from './types';
 
 /**
@@ -283,6 +284,46 @@ export interface Services {
    * because the symptom ("this runway has no road") looks nothing like the cause.
    */
   readonly roadIslands: number;
+  /**
+   * Facility ids of terminal modules that are actually part of a terminal.
+   *
+   * A module is one tile of building that does nothing alone. It counts when it is
+   * road-served *and* reachable from a road-served terminal core through a chain of
+   * road-served modules — so a concourse is a chain you lay out on the map, and cutting the
+   * middle of it out strands everything past the cut.
+   *
+   * Computed here with the road network and the taxi links because all three answer the same
+   * kind of question and all three are wanted once, when the day starts.
+   */
+  readonly terminalModules: ReadonlySet<string>;
+}
+
+/**
+ * Flood-fills outward from every working terminal core across adjacent working modules.
+ *
+ * Breadth-first over the facilities themselves rather than over tiles: there are tens of
+ * facilities and hundreds of tiles, and a module is identified by the building on it.
+ */
+function terminalModulesOf(airport: Airport, roadServed: ReadonlySet<string>): Set<string> {
+  const attached = new Set<string>();
+  const spare = airport.facilities.filter(
+    (f) => TERMINAL_MODULES.has(f.type) && roadServed.has(f.id),
+  );
+
+  const queue = airport.facilities.filter((f) => f.type === 'terminal' && roadServed.has(f.id));
+
+  while (queue.length > 0) {
+    const at = queue.pop()!;
+    for (let i = spare.length - 1; i >= 0; i--) {
+      const module = spare[i]!;
+      if (Math.abs(module.x - at.x) + Math.abs(module.y - at.y) !== 1) continue;
+      spare.splice(i, 1);
+      attached.add(module.id);
+      queue.push(module);
+    }
+  }
+
+  return attached;
 }
 
 export function buildServices(airport: Airport): Services {
@@ -302,5 +343,10 @@ export function buildServices(airport: Airport): Services {
     if (facilityHasRoad(airport, network, facility)) roadServed.add(facility.id);
   }
 
-  return { links: buildLinks(airport), roadServed, roadIslands: components(airport).length };
+  return {
+    links: buildLinks(airport),
+    roadServed,
+    roadIslands: components(airport).length,
+    terminalModules: terminalModulesOf(airport, roadServed),
+  };
 }

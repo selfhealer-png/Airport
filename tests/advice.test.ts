@@ -244,3 +244,37 @@ describe('traffic forecast', () => {
     }
   });
 });
+
+/** The warnings only, which is what a player is meant to act on. */
+const warnings = (state: GameState): string[] =>
+  airportAdvice(state).filter((a) => a.tone === 'warn').map((a) => a.text);
+
+describe('terminal modules', () => {
+  it('warns about a module that reaches no terminal', () => {
+    /*
+     * The one mistake modules make possible that the build system cannot refuse: a placement
+     * that was legal when it was made and was orphaned later, by demolishing the middle of a
+     * chain or by never laying the road. The building is still standing, so nothing looks
+     * wrong — which is exactly when advice earns its place.
+     */
+    const state = working();
+    state.airport.facilities.push(
+      { id: 'f-term', type: 'terminal', x: 4, y: 2, level: 0 },
+      { id: 'orphan', type: 'gate-hall', x: 20, y: 30, level: 0 },
+    );
+    fullyServiced(state.airport);
+
+    expect(warnings(state).join(' ')).toMatch(/module/i);
+  });
+
+  it('says nothing about modules that are all attached', () => {
+    const state = working();
+    state.airport.facilities.push(
+      { id: 'f-term', type: 'terminal', x: 4, y: 2, level: 0 },
+      { id: 'm0', type: 'gate-hall', x: 5, y: 2, level: 0 },
+    );
+    fullyServiced(state.airport);
+
+    expect(warnings(state).join(' ')).not.toMatch(/module/i);
+  });
+});

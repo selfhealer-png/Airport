@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { LEVEL_MEADOW } from '@/content/levels';
+import {
+  GATE_HALL_CAPACITY,
+  NO_TERMINAL_CAPACITY,
+  TERMINAL_CORE_CAPACITY,
+} from '@/content/buildings';
 import { towerLevel } from '@/content/buildings';
 import {
   addRoadRun,
@@ -9,7 +14,7 @@ import {
   createGame,
   hasWorkingFireStation,
   hasWorkingFuelFarm,
-  workingShops,
+  workingTerminalCapacity,
   workingTowerLevel,
 } from '@/sim/airport';
 import { buildServices } from '@/sim/connectivity';
@@ -129,51 +134,72 @@ describe('shops', () => {
     addRoadRun(state.airport, 7, 9, 7, 16);
     addRoadRun(state.airport, 7, 16, 14, 16);
     addRoadRun(state.airport, 13, 12, 13, 16);
-    state.airport.facilities.push({ id: 'f-term', type: 'terminal', x: 14, y: 5, level: 2 });
+    state.airport.facilities.push({ id: 'f-term', type: 'terminal', x: 14, y: 5, level: 0 });
     addRoadRun(state.airport, 14, 4, 14, 16);
     return state;
   }
 
-  it('refuses a shop with no terminal to sit inside', () => {
+  it('refuses a module with no terminal to attach to', () => {
     const state = unroaded();
     state.cash = 50_000;
-    expect(checkFacility(state, 'shop', 5, 5)).toBe('needs-terminal');
+    expect(checkFacility(state, 'gate-hall', 5, 5)).toBe('needs-terminal');
   });
 
-  it('refuses a shop that is not touching the terminal', () => {
+  it('refuses a module that is not touching the terminal', () => {
     const state = withTerminal();
     state.cash = 50_000;
-    expect(checkFacility(state, 'shop', 17, 5)).toBe('needs-terminal');
-    expect(checkFacility(state, 'shop', 15, 5)).not.toBe('needs-terminal');
+    expect(checkFacility(state, 'gate-hall', 17, 5)).toBe('needs-terminal');
+    expect(checkFacility(state, 'gate-hall', 15, 5)).not.toBe('needs-terminal');
   });
 
-  it('refuses more shops than the terminal has room for', () => {
-    const state = withTerminal(); // a level 2 terminal has two slots
+  it('lets a module attach to another module rather than only to the core', () => {
+    // A concourse is a chain. Requiring every module to touch the core itself would cap a
+    // terminal at four buildings, which is not a layout, it is a shape.
+    const state = withTerminal();
     state.cash = 50_000;
-    state.airport.facilities.push(
-      { id: 's1', type: 'shop', x: 15, y: 5, level: 0 },
-      { id: 's2', type: 'shop', x: 13, y: 5, level: 0 },
-    );
-    expect(checkFacility(state, 'shop', 14, 6)).toBe('no-shop-slot');
+    state.airport.facilities.push({ id: 'm1', type: 'gate-hall', x: 15, y: 5, level: 0 });
+    expect(checkFacility(state, 'gate-hall', 16, 5)).not.toBe('needs-terminal');
   });
 
-  it('counts only shops that touch the terminal and have a road', () => {
+  it('rations retail against the gate halls', () => {
+    /*
+     * Land alone is too weak a cap on retail: it earns per passenger of every flight, so
+     * without this the winning move is a field of shops beside a single core and the terminal
+     * stops being about capacity at all.
+     *
+     * One shop per hall was the first rule and read beautifully, but nine halls then licensed
+     * nine shops and retail became the whole economy — hence `RETAIL_PER_GATE_HALLS`.
+     */
+    const state = withTerminal();
+    state.cash = 50_000;
+    expect(checkFacility(state, 'shop', 15, 5)).toBe('no-shop-slot');
+
+    state.airport.facilities.push({ id: 'm1', type: 'gate-hall', x: 15, y: 5, level: 0 });
+    expect(checkFacility(state, 'shop', 16, 5)).toBe('no-shop-slot');
+
+    state.airport.facilities.push({ id: 'm2', type: 'gate-hall', x: 16, y: 5, level: 0 });
+    expect(checkFacility(state, 'shop', 17, 5)).not.toBe('no-shop-slot');
+  });
+
+  it('counts only modules that reach the terminal and have a road', () => {
     const state = withTerminal();
     state.airport.facilities.push(
-      { id: 's1', type: 'shop', x: 14, y: 4, level: 0 }, // touching, on the road
-      { id: 's2', type: 'shop', x: 20, y: 30, level: 0 }, // out in the field
+      { id: 'm1', type: 'gate-hall', x: 14, y: 4, level: 0 }, // touching, on the road
+      { id: 'm2', type: 'gate-hall', x: 20, y: 30, level: 0 }, // out in the field
     );
-    expect(workingShops(state.airport, buildServices(state.airport))).toBe(1);
+    const capacity = workingTerminalCapacity(state.airport, buildServices(state.airport));
+    expect(capacity.passengerCapacity).toBe(TERMINAL_CORE_CAPACITY + GATE_HALL_CAPACITY);
   });
 
-  it('closes every shop when the terminal itself loses its road', () => {
+  it('closes every module when the terminal itself loses its road', () => {
     const state = unroaded();
     addRoadRun(state.airport, 7, 9, 7, 16);
     state.airport.facilities.push(
-      { id: 'f-term', type: 'terminal', x: 20, y: 30, level: 2 },
-      { id: 's1', type: 'shop', x: 20, y: 31, level: 0 },
+      { id: 'f-term', type: 'terminal', x: 20, y: 30, level: 0 },
+      { id: 'm1', type: 'gate-hall', x: 20, y: 31, level: 0 },
     );
-    expect(workingShops(state.airport, buildServices(state.airport))).toBe(0);
+    const capacity = workingTerminalCapacity(state.airport, buildServices(state.airport));
+    expect(capacity.passengerCapacity).toBe(NO_TERMINAL_CAPACITY);
   });
 });
 

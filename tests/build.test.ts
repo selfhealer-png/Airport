@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LEVEL_MEADOW } from '@/content/levels';
-import { MIN_RUNWAY_TILES, RUNWAY_COST_PER_TILE, STAND_COST } from '@/content/costs';
+import { FACILITY_COST, MIN_RUNWAY_TILES, RUNWAY_COST_PER_TILE, STAND_COST } from '@/content/costs';
 import { TOWER_LEVELS } from '@/content/buildings';
 import { createGame, towerLevelOf } from '@/sim/airport';
 import {
@@ -191,18 +191,22 @@ describe('facilities', () => {
     expect(checkUpgradeFacility(state, id)).toBe('max-level');
   });
 
-  it('names the facility by id, so several of a type can be upgraded independently', () => {
-    // Upgrades used to be keyed by type, which only worked while there was one of each.
-    // With two terminals, "upgrade the terminal" has no answer — this is what pins that.
+  it('refuses to upgrade a terminal, which grows by gaining modules instead', () => {
+    // The terminal's level ladder is gone. An upgrade you tap is not a decision; a concourse
+    // you have to find room for is.
     const state = game(1_000_000);
-    const first = applyFacility(state, quote(checkFacility(state, 'terminal', 4, 4)), 'terminal', 4, 4);
-    const second = applyFacility(state, quote(checkFacility(state, 'terminal', 9, 9)), 'terminal', 9, 9);
+    const id = applyFacility(state, quote(checkFacility(state, 'terminal', 4, 4)), 'terminal', 4, 4);
+    expect(checkUpgradeFacility(state, id)).toBe('max-level');
+  });
 
-    applyUpgradeFacility(state, quote(checkUpgradeFacility(state, second)), second);
+  it('lets a second terminal be built at the plain price', () => {
+    // A second core used to cost a rising multiple, to stop cheap sheds beating the upgrade
+    // ladder. With no ladder left to protect, land is the only limiter that is needed.
+    const state = game(1_000_000);
+    applyFacility(state, quote(checkFacility(state, 'terminal', 4, 4)), 'terminal', 4, 4);
+    const second = checkFacility(state, 'terminal', 9, 9);
 
-    const level = (id: string) => state.airport.facilities.find((f) => f.id === id)!.level;
-    expect(level(first)).toBe(1);
-    expect(level(second)).toBe(2);
+    expect(isAffordableQuote(second) && second.cost).toBe(FACILITY_COST.terminal);
   });
 
   it('refuses to upgrade an id that is not there', () => {

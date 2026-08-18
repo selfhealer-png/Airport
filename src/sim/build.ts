@@ -1,8 +1,7 @@
 import {
-  ADDITIONAL_TERMINAL_COST_MULTIPLIER,
   CERTIFICATION_LEVELS,
-  terminalLevel,
-  TERMINAL_LEVELS,
+  retailAllowance,
+  TERMINAL_MODULES,
   TOWER_LEVELS,
 } from '@/content/buildings';
 import {
@@ -18,7 +17,7 @@ import {
   STAND_COST,
   TAXIWAY_COST_PER_TILE,
 } from '@/content/costs';
-import { addGroundwork, facilityOf, hasGroundwork, shopsOf, terminalsOf } from './airport';
+import { addGroundwork, facilityOf, hasGroundwork } from './airport';
 import {
   runwayLength,
   SURFACE_RANK,
@@ -26,6 +25,7 @@ import {
   terrainAt,
   type Airport,
   type BuildKind,
+  type Facility,
   type FacilityType,
   type GameState,
   type Runway,
@@ -405,58 +405,64 @@ export function checkHelipad(state: GameState, x: number, y: number): BuildCheck
 
 export function facilityCost(type: FacilityType, level: number): number {
   if (type === 'tower') return TOWER_LEVELS[level]?.cost ?? Number.POSITIVE_INFINITY;
-  if (type === 'terminal') return TERMINAL_LEVELS[level]?.cost ?? Number.POSITIVE_INFINITY;
   return FACILITY_COST[type];
 }
 
-/**
- * What a *new* terminal costs, given how many there already are.
- *
- * Flat per-instance pricing would make a second level-1 terminal a far cheaper way to add
- * capacity than upgrading the one you have, and upgrading would become strictly worse than
- * spamming the cheapest building in the game. The multiplier keeps both moves on the table.
- * Applied only when placing a new terminal; upgrading an existing one is priced from
- * `TERMINAL_LEVELS` exactly as it always was.
- */
-export function newTerminalCost(existing: number): number {
-  const index = Math.min(existing, ADDITIONAL_TERMINAL_COST_MULTIPLIER.length - 1);
-  return Math.round(facilityCost('terminal', 1) * ADDITIONAL_TERMINAL_COST_MULTIPLIER[index]!);
+/** Facilities of one type, wherever they are. Modules and terminals are not unique. */
+function facilitiesOfType(airport: Airport, type: FacilityType): Facility[] {
+  return airport.facilities.filter((f) => f.type === type);
 }
 
-/** Places a facility for the first time. Tower and terminal arrive at level 1. */
+/**
+ * Places a facility. Only the tower arrives with a level.
+ *
+ * Terminal modules are the interesting case: they must **touch the terminal**, which on a
+ * tile grid means orthogonally adjacent to a core or to another module. Refused outright
+ * rather than allowed to sit in a field earning nothing — a gate hall is £1,100 and that is
+ * too much to lose to a placement the game could simply have declined.
+ *
+ * Gated on what is *built*, not on what is working. You are allowed to build things that do
+ * not work yet — the road may not be laid — and `airportAdvice()` is what tells you they are
+ * dead weight. Gating on the working set instead would make the order you build in matter for
+ * no reason anyone could deduce.
+ */
 export function checkFacility(
   state: GameState,
   type: FacilityType,
   x: number,
   y: number,
 ): BuildCheck {
-  if (type === 'shop') {
-    // "Inside the terminal" on a tile grid means orthogonally touching it. Refusing outright
-    // rather than letting it be built and quietly earn nothing: £1,800 is too much to lose
-    // to a placement the game could simply have declined.
-    // With more than one terminal, "inside the terminal" means touching any of them, and
-    // the slots sum across all of them. Gated on what is *built*, not what is working: you
-    // are allowed to build things that do not work yet, and `airportAdvice()` is what tells
-    // you they are dead weight.
-    const terminals = terminalsOf(state.airport);
-    if (terminals.length === 0) return 'needs-terminal';
-    if (!terminals.some((t) => Math.abs(t.x - x) + Math.abs(t.y - y) === 1)) {
+  const { airport } = state;
+
+  if (TERMINAL_MODULES.has(type)) {
+    const attachable = airport.facilities.filter(
+      (f) => f.type === 'terminal' || TERMINAL_MODULES.has(f.type),
+    );
+    if (!attachable.some((f) => Math.abs(f.x - x) + Math.abs(f.y - y) === 1)) {
       return 'needs-terminal';
     }
-    const slots = terminals.reduce((sum, t) => sum + terminalLevel(t.level).shopSlots, 0);
-    if (shopsOf(state.airport).length >= slots) return 'no-shop-slot';
-  } else if (type !== 'terminal' && facilityOf(state.airport, type)) {
-    // Terminals are no longer unique: capacity pools across them, so a second building is
-    // how an airport gets past level 4's ceiling. Everything else is still one per airport.
+
+    /*
+     * Retail is rationed against the gate halls — see `retailAllowance`.
+     *
+     * Land alone is too weak a cap. Retail earns per passenger of every flight, so without a
+     * limit the winning move is a field of shops beside a single core and the terminal stops
+     * being about capacity at all. Tying it to gate halls keeps the two pulling together:
+     * shops are worth building because there are people to walk past them.
+     */
+    if (type === 'shop') {
+      const allowed = retailAllowance(facilitiesOfType(airport, 'gate-hall').length);
+      if (facilitiesOfType(airport, 'shop').length >= allowed) return 'no-shop-slot';
+    }
+  } else if (type !== 'terminal' && facilityOf(airport, type)) {
+    // Terminals are not unique: a second core is how an airport spreads across the field when
+    // the ground beside the first one runs out. Everything else is one per airport.
     return 'already-built';
   }
 
-  const problem = tileIsFree(state.airport, x, y, 'structure');
+  const problem = tileIsFree(airport, x, y, 'structure');
   if (problem) return problem;
 
-  if (type === 'terminal') {
-    return afford(state, newTerminalCost(terminalsOf(state.airport).length));
-  }
   return afford(state, facilityCost(type, LEVELLED_FACILITIES.has(type) ? 1 : 0));
 }
 
@@ -471,7 +477,7 @@ export function checkUpgradeFacility(state: GameState, facilityId: string): Buil
   if (!facility) return 'nothing-there';
   if (!LEVELLED_FACILITIES.has(facility.type)) return 'max-level';
 
-  const levels = facility.type === 'tower' ? TOWER_LEVELS : TERMINAL_LEVELS;
+  const levels = TOWER_LEVELS;
   const next = facility.level + 1;
   if (next >= levels.length) return 'max-level';
 
@@ -726,14 +732,10 @@ export function checkDemolish(state: GameState, x: number, y: number): BuildChec
 
   const facility = airport.facilities.find((f) => f.x === x && f.y === y);
   if (facility) {
+    // The tower refunds every level bought so far; everything else was a single purchase.
     const paid = LEVELLED_FACILITIES.has(facility.type)
-      ? // Levelled facilities refund every level bought so far. A terminal's first level was
-        // priced against how many already existed when it went up, so refund what was
-        // actually paid rather than the flat list price.
-        Array.from({ length: facility.level }, (_, i) =>
-          facility.type === 'terminal' && i === 0
-            ? newTerminalCost(terminalsOf(airport).indexOf(facility))
-            : facilityCost(facility.type, i + 1),
+      ? Array.from({ length: facility.level }, (_, i) =>
+          facilityCost(facility.type, i + 1),
         ).reduce((sum, value) => sum + value, 0)
       : facilityCost(facility.type, 0);
     return { cost: -Math.round(paid * DEMOLITION_REFUND) };

@@ -45,15 +45,32 @@ export const STAND_COST: Readonly<Record<StandSize, number>> = {
  */
 export const HELIPAD_COST = 4_200;
 
-/** Facilities without levels. Tower and terminal are priced per level in `buildings.ts`. */
-export const FACILITY_COST: Readonly<Record<'fuel-farm' | 'fire-station' | 'shop', number>> = {
+/**
+ * Everything except the tower, which is the only thing left with a level ladder.
+ *
+ * The four modules are priced against what they do rather than against each other: a gate
+ * hall is the cheapest because you will want ten of them, and border control is dearer than
+ * a large stand because it is a decision about what kind of airport this is rather than an
+ * increment.
+ */
+export const FACILITY_COST: Readonly<Record<Exclude<FacilityType, 'tower'>, number>> = {
+  terminal: 900,
   'fuel-farm': 2_400,
   'fire-station': 3_600,
+  'gate-hall': 1_100,
+  'baggage-hall': 2_200,
   shop: 3_500,
+  'border-control': 14_000,
 };
 
-/** Facility types that upgrade in place rather than being simply present or absent. */
-export const LEVELLED_FACILITIES: ReadonlySet<FacilityType> = new Set(['tower', 'terminal']);
+/**
+ * Facility types that upgrade in place rather than being simply present or absent.
+ *
+ * Only the tower. A terminal used to be here; it grows by gaining modules now, which is the
+ * whole point — an upgrade you tap is not a decision, and a concourse you have to find room
+ * for is.
+ */
+export const LEVELLED_FACILITIES: ReadonlySet<FacilityType> = new Set(['tower']);
 
 /** Demolition returns a fraction of what was paid. Mistakes should sting, not ruin. */
 export const DEMOLITION_REFUND = 0.4;

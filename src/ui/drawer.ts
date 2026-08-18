@@ -1,7 +1,8 @@
 import {
   certificationLevel,
   CERTIFICATION_LEVELS,
-  TERMINAL_LEVELS,
+  GATE_HALL_CAPACITY,
+  TERMINAL_CORE_CAPACITY,
   TOWER_LEVELS,
 } from '@/content/buildings';
 import {
@@ -76,7 +77,13 @@ function chipSections(): ChipSection[] {
     // and it is a runway as much as it is a stand.
     { title: 'Helipads', chips: pick('helipad') },
     { title: 'Towers & terminals', chips: pick('tower', 'terminal') },
-    { title: 'Support', chips: pick('fuel-farm', 'fire-station', 'shop') },
+    // The modules together, because they are one decision made four ways: what the terminal
+    // is for. Keeping them beside the core would bury the core in its own extensions.
+    {
+      title: 'Terminal modules',
+      chips: pick('gate-hall', 'baggage-hall', 'shop', 'border-control'),
+    },
+    { title: 'Support', chips: pick('fuel-farm', 'fire-station') },
     { title: 'Demolish', chips: pick('demolish') },
   ];
 }
@@ -166,8 +173,32 @@ function allChips(): ToolChip[] {
     {
       id: 'terminal',
       label: 'Terminal',
-      hint: `£${TERMINAL_LEVELS[1]!.cost.toLocaleString()}`,
+      hint: `£${FACILITY_COST.terminal.toLocaleString()} · ${TERMINAL_CORE_CAPACITY}/day`,
       tool: { kind: 'facility', type: 'terminal' },
+    },
+    {
+      id: 'gate-hall',
+      label: 'Gate hall',
+      hint: `£${FACILITY_COST['gate-hall'].toLocaleString()} · +${GATE_HALL_CAPACITY}/day`,
+      tool: { kind: 'facility', type: 'gate-hall' },
+    },
+    {
+      id: 'baggage-hall',
+      label: 'Baggage hall',
+      hint: `£${FACILITY_COST['baggage-hall'].toLocaleString()} · faster turnaround`,
+      tool: { kind: 'facility', type: 'baggage-hall' },
+    },
+    {
+      id: 'shop',
+      label: 'Retail unit',
+      hint: `£${FACILITY_COST.shop.toLocaleString()} · one per gate hall`,
+      tool: { kind: 'facility', type: 'shop' },
+    },
+    {
+      id: 'border-control',
+      label: 'Border control',
+      hint: `£${FACILITY_COST['border-control'].toLocaleString()} · widebodies`,
+      tool: { kind: 'facility', type: 'border-control' },
     },
     {
       id: 'fuel-farm',
@@ -180,12 +211,6 @@ function allChips(): ToolChip[] {
       label: 'Fire station',
       hint: `£${FACILITY_COST['fire-station'].toLocaleString()}`,
       tool: { kind: 'facility', type: 'fire-station' },
-    },
-    {
-      id: 'shop',
-      label: 'Shop',
-      hint: `£${FACILITY_COST.shop.toLocaleString()}`,
-      tool: { kind: 'facility', type: 'shop' },
     },
     { id: 'demolish', label: 'Demolish', hint: 'Part refund', tool: { kind: 'demolish' } },
   ];

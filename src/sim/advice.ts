@@ -3,8 +3,7 @@ import {
   certificationLevel,
   CERTIFICATION_LEVELS,
   requiredCertification,
-  TERMINAL_LEVELS,
-  terminalLevel,
+  TERMINAL_MODULES,
   towerLevel,
 } from '@/content/buildings';
 import { arrivalsForDay, generateSchedule } from '@/content/schedule';
@@ -213,13 +212,13 @@ function certificationAdvice(state: GameState): Advice[] {
   return advice;
 }
 
-/** Whether the terminals can cope with what is booked in, and whether retail is paying. */
+/** Whether the terminals can cope with what is booked in, and whether every module counts. */
 function terminalAdvice(state: GameState, services: Services): Advice[] {
   const advice: Advice[] = [];
-  // Pooled: capacity and shop slots are what every working terminal adds up to, not what the
-  // best one manages on its own.
-  const terminals = workingTerminalCapacity(state.airport, services);
-  const count = terminalsOf(state.airport).length;
+  const { airport } = state;
+  // Pooled: capacity is what every working module of every working terminal adds up to.
+  const terminals = workingTerminalCapacity(airport, services);
+  const cores = terminalsOf(airport).length;
 
   const expected = generateSchedule(state.day, state.seed).reduce(
     (sum, arrival) => sum + aircraftClass(arrival.classId).passengers,
@@ -227,44 +226,50 @@ function terminalAdvice(state: GameState, services: Services): Advice[] {
   );
 
   if (expected > terminals.passengerCapacity) {
-    // Once every terminal is at its ceiling, "upgrade it" is no longer advice — the only way
-    // past 2,600 a day is a second building, and the player has no reason to guess that.
-    const maxed =
-      count > 0 &&
-      terminalsOf(state.airport).every((t) => t.level >= TERMINAL_LEVELS.length - 1);
     advice.push({
       tone: 'warn',
       text:
         `About ${expected} passengers are booked in and your terminals can process ` +
         `${terminals.passengerCapacity}. The overflow still lands, but you earn only the ` +
         'landing fee for them. ' +
-        (maxed
-          ? 'Every terminal is fully upgraded, so the only way to take more is another one.'
-          : 'Upgrade a terminal.'),
+        (cores === 0
+          ? 'Build a terminal.'
+          : 'Add a gate hall beside the terminal — each one takes another 260 a day.'),
     });
   }
 
-  const shopsBuilt = state.airport.facilities.filter((f) => f.type === 'shop').length;
-  const shopsWorking = state.airport.facilities.filter(
-    (f) => f.type === 'shop' && services.roadServed.has(f.id),
-  ).length;
-
-  if (shopsBuilt > terminals.shopSlots) {
+  /*
+   * A module that reaches no terminal is the failure this advice exists for.
+   *
+   * It is the one mistake modules make possible that the build system cannot refuse: a
+   * placement legal when it was made, orphaned later by demolishing the middle of a chain or
+   * simply never given a road. The building is still there, so nothing looks wrong.
+   */
+  const modules = airport.facilities.filter((f) => TERMINAL_MODULES.has(f.type));
+  const stranded = modules.filter((m) => !services.terminalModules.has(m.id)).length;
+  if (stranded > 0) {
     advice.push({
       tone: 'warn',
       text:
-        `You have room for ${terminals.shopSlots} shop${terminals.shopSlots === 1 ? '' : 's'}` +
-        ` and you have built ${shopsBuilt}. The extras trade nothing.`,
+        `${stranded} terminal ${stranded === 1 ? 'module does' : 'modules do'} nothing: ` +
+        'each one needs a road, and a chain of modules back to the terminal itself.',
     });
-  } else if (shopsBuilt === 0 && terminals.shopSlots > 0 && expected > 80) {
+  }
+
+  const gateHalls = airport.facilities.filter((f) => f.type === 'gate-hall').length;
+  const shops = airport.facilities.filter((f) => f.type === 'shop').length;
+
+  if (cores > 0 && gateHalls > 0 && shops === 0 && expected > 80) {
     advice.push({
       tone: 'info',
-      text: 'Shops next to the terminal earn on every passenger who walks past. You have none.',
+      text: 'Retail units earn on every passenger who walks past. You have none.',
     });
-  } else if (shopsWorking < shopsBuilt) {
+  } else if (cores > 0 && shops >= gateHalls && gateHalls > 0) {
     advice.push({
-      tone: 'warn',
-      text: 'A shop only trades if it sits next to the terminal and has a road to it.',
+      tone: 'info',
+      text:
+        'Every gate hall has its parade of shops. Another gate hall would make room for ' +
+        'another retail unit as well as taking more passengers.',
     });
   }
 

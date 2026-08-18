@@ -2,14 +2,13 @@ import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import {
   certificationLevel,
   CRASH_COST,
+  baggageTurnaroundFactor,
   FUEL_FARM_TURNAROUND_FACTOR,
   handlingCost,
-  passengerRevenue,
   towerLevel,
 } from '@/content/buildings';
 import {
   hasWorkingFuelFarm,
-  workingShops,
   workingTerminalCapacity,
   workingTowerLevel,
 } from './airport';
@@ -67,6 +66,7 @@ const STRUCTURAL_REASONS: ReadonlySet<string> = new Set([
   'no-road-helipad',
   'no-fuel-farm',
   'no-fire-station',
+  'no-border-control',
 ]);
 
 /**
@@ -203,6 +203,20 @@ function record(state: GameState, day: DayState, event: DayEvent): void {
 }
 
 /**
+ * How much of the scheduled turnaround an aeroplane actually spends on stand.
+ *
+ * Two independent buildings pull on it and they multiply: a fuel farm because the bowser is
+ * already there, and baggage halls because the bags are the long pole. That is what stops the
+ * terminal being purely a revenue decision — a baggage hall buys apron throughput, which is
+ * the constraint a big terminal creates in the first place.
+ */
+function turnaroundFactor(state: GameState, day: DayState): number {
+  const fuel = hasWorkingFuelFarm(state.airport, day.services) ? FUEL_FARM_TURNAROUND_FACTOR : 1;
+  const { baggageHalls } = workingTerminalCapacity(state.airport, day.services);
+  return fuel * baggageTurnaroundFactor(baggageHalls);
+}
+
+/**
  * A landing pays twice: a landing fee that is always collected, and the passengers — but
  * only as many of them as the terminal can process today.
  *
@@ -212,8 +226,7 @@ function record(state: GameState, day: DayState, event: DayEvent): void {
  */
 function land(state: GameState, day: DayState, aircraft: Aircraft): void {
   const spec = aircraftClass(aircraft.classId);
-  // Pooled across every working terminal: capacity sums, the fare rate is a capacity-weighted
-  // blend. See `workingTerminalCapacity`.
+  // Pooled across every module of every working terminal. See `workingTerminalCapacity`.
   const terminals = workingTerminalCapacity(state.airport, day.services);
 
   const room = Math.max(0, terminals.passengerCapacity - day.passengersHandled);
@@ -222,9 +235,14 @@ function land(state: GameState, day: DayState, aircraft: Aircraft): void {
   day.passengersHandled += processed;
   day.passengersTurnedAway += turnedAway;
 
-  const shops = workingShops(state.airport, day.services);
-  const fare = Math.round(spec.fare * terminals.fareMultiplier);
-  const fromPassengers = Math.round(processed * passengerRevenue(terminals.fareMultiplier, shops));
+  /*
+   * The landing fee is flat: it is what the *runway* earns, and the terminal earns from the
+   * people. The old terminal ladder multiplied fees as well, which meant a freighter — which
+   * carries nobody and never touches the terminal — still paid more for a better terminal.
+   * Splitting them cleanly is what makes a long runway and a big terminal separate bets.
+   */
+  const fare = spec.fare;
+  const fromPassengers = Math.round(processed * terminals.revenuePerPassenger);
 
   /*
    * Ground handling, charged only on aeroplanes that actually got down.
@@ -345,9 +363,7 @@ function advanceTimed(state: GameState, day: DayState, aircraft: Aircraft, dt: n
       // so it goes straight to `parked`. Branching here rather than giving the two classes a
       // zero taxi time: that would technically work and would leave a phase every other piece
       // of code touching `AircraftPhase` has to know is a one-tick no-op for two classes.
-      const factor = hasWorkingFuelFarm(state.airport, day.services)
-        ? FUEL_FARM_TURNAROUND_FACTOR
-        : 1;
+      const factor = turnaroundFactor(state, day);
       if (isRotorcraft(aircraft.classId)) {
         aircraft.phase = 'parked';
         aircraft.timer = spec.turnaroundSeconds * factor;
@@ -360,10 +376,7 @@ function advanceTimed(state: GameState, day: DayState, aircraft: Aircraft, dt: n
 
     case 'taxi-in': {
       aircraft.phase = 'parked';
-      const factor = hasWorkingFuelFarm(state.airport, day.services)
-        ? FUEL_FARM_TURNAROUND_FACTOR
-        : 1;
-      aircraft.timer = spec.turnaroundSeconds * factor;
+      aircraft.timer = spec.turnaroundSeconds * turnaroundFactor(state, day);
       break;
     }
 
@@ -503,6 +516,8 @@ export function explainReason(reason: string | null): string {
       return 'no road reaching a stand of the right size';
     case 'not-certified':
       return 'the aerodrome is not licensed for aircraft this size';
+    case 'no-border-control':
+      return 'no border control — international arrivals need somewhere to clear';
     case 'no-helipad':
       return 'no helipad — it does not use a runway';
     case 'no-road-helipad':

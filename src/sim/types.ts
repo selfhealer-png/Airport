@@ -179,12 +179,27 @@ export interface Airport {
   nextEntityId: number;
 }
 
-export type FacilityType = 'tower' | 'terminal' | 'fuel-farm' | 'fire-station' | 'shop';
+/**
+ * Everything that occupies a tile and is not a runway, stand or helipad.
+ *
+ * The last four are **terminal modules**: they do nothing on their own and everything as part
+ * of a terminal. See `TERMINAL_MODULES`.
+ */
+export type FacilityType =
+  | 'tower'
+  | 'terminal'
+  | 'fuel-farm'
+  | 'fire-station'
+  | 'gate-hall'
+  | 'baggage-hall'
+  | 'shop'
+  | 'border-control';
 
 /**
- * A facility building. Tower and terminal carry a level; the other two are simply present
- * or not. Position has no effect on the simulation — what it costs is space near the
- * runways, which is the point.
+ * A facility building. Only the tower carries a level now; everything else is present or it
+ * is not, because a terminal grows by gaining modules rather than by gaining a number.
+ * Position has no effect on the simulation *except* for terminal modules, which must touch
+ * the terminal they belong to — what everything else costs is space near the runways.
  */
 export interface Facility {
   readonly id: string;
@@ -209,6 +224,7 @@ export type BlockReason =
   | 'no-stand-size'
   | 'no-road-stand'
   | 'not-certified'
+  | 'no-border-control'
   | 'no-helipad'
   | 'no-road-helipad'
   | 'helipad-busy'
@@ -326,6 +342,14 @@ export interface AircraftClass {
   /** Airport facilities this class refuses to operate without. */
   readonly requiresFuelFarm: boolean;
   readonly requiresFireStation: boolean;
+  /**
+   * Whether this class needs somewhere for its passengers to clear the border.
+   *
+   * The one facility requirement that is about *who* is on board rather than what the
+   * aeroplane needs to operate, which is why it is a terminal module and not a support
+   * building — an international arrival is a different kind of traffic, not a bigger one.
+   */
+  readonly requiresBorderControl: boolean;
 }
 
 export interface ScheduledArrival {

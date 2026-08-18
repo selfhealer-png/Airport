@@ -1,6 +1,11 @@
 import { aircraftClass, isRotorcraft } from '@/content/aircraft';
 import { requiredCertification, towerLevel } from '@/content/buildings';
-import { hasWorkingFireStation, hasWorkingFuelFarm, workingTowerLevel } from './airport';
+import {
+  hasWorkingFireStation,
+  hasWorkingFuelFarm,
+  workingTerminalCapacity,
+  workingTowerLevel,
+} from './airport';
 import { helipadById, standById, type Services } from './connectivity';
 import {
   runwayLength,
@@ -103,6 +108,19 @@ export function structuralBlock(
   // last — when they can actually use it — rather than paying rent on a category they have
   // nowhere to put.
   if (airport.certification < requiredCertification(spec.runwayLength)) return 'not-certified';
+
+  /*
+   * Somewhere for the passengers to clear the border.
+   *
+   * After the runway for the same reason certification is: there is no point telling someone
+   * to build the dearest building in the game for an aeroplane that has nowhere to land. It
+   * goes through `structuralBlock` rather than being special-cased so the forecast warns
+   * about it and the debrief explains it, both for free — a gate the player cannot be warned
+   * about is a punishment rather than a mechanic.
+   */
+  if (spec.requiresBorderControl && !workingTerminalCapacity(airport, services).borderControl) {
+    return 'no-border-control';
+  }
 
   // Fire cover and maintenance reach a runway by road, not by taxiway. A strip nothing can
   // drive to cannot be opened, however long it is.

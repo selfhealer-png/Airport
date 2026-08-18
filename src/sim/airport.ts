@@ -1,4 +1,10 @@
-import { terminalLevel, type TerminalLevel } from '@/content/buildings';
+import {
+  GATE_HALL_CAPACITY,
+  NO_TERMINAL_CAPACITY,
+  passengerRevenue,
+  TERMINAL_CORE_CAPACITY,
+  TOWER_LEVELS,
+} from '@/content/buildings';
 import type { Services } from './connectivity';
 import type {
   Airport,
@@ -54,10 +60,6 @@ export function towerLevelOf(airport: Airport): number {
   return facilityOf(airport, 'tower')?.level ?? 0;
 }
 
-export function terminalLevelOf(airport: Airport): number {
-  return facilityOf(airport, 'terminal')?.level ?? 0;
-}
-
 export function hasFuelFarm(airport: Airport): boolean {
   return facilityOf(airport, 'fuel-farm') !== undefined;
 }
@@ -66,7 +68,7 @@ export function hasFireStation(airport: Airport): boolean {
   return facilityOf(airport, 'fire-station') !== undefined;
 }
 
-/** Every shop on the airport. Unlike the other facilities, shops are not unique. */
+/** Every retail unit on the airport. Unlike a tower, modules are not unique. */
 export function shopsOf(airport: Airport): Facility[] {
   return airport.facilities.filter((facility) => facility.type === 'shop');
 }
@@ -99,62 +101,60 @@ export function workingTowerLevel(airport: Airport, services: Services): number 
 }
 
 /**
- * The highest level of terminal actually working. Only for questions of the form "does this
- * airport have a terminal at all, and how good is the best one" — anything about *capacity*
- * wants `workingTerminalCapacity`, which pools every building.
- */
-export function workingTerminalLevel(airport: Airport, services: Services): number {
-  return terminalsOf(airport)
-    .filter((t) => isWorking(services, t))
-    .reduce((best, t) => Math.max(best, t.level), 0);
-}
-
-/**
  * What the airport's terminals can do between them.
  *
- * Passenger capacity and shop slots **sum**: two buildings process two buildings' worth of
- * people. The fare multiplier does not, and that asymmetry is the whole design. Summing it
- * would make two level-1 terminals worth 2.3x — combined with doubled capacity, roughly four
- * times the revenue for the price of two of the cheapest buildings in the game, and nobody
- * would ever upgrade anything again.
+ * Everything **sums**, across every module of every terminal, and that is the whole shape of
+ * the change from the old level ladder. A ladder had to defend itself against two cheap sheds
+ * beating one good building, which is why it carried a capacity-weighted average of fare
+ * multipliers that nobody could have guessed at from playing. Modules cost a tile each, so
+ * "more" is already paid for in land, and plain addition is honest.
  *
- * So the multiplier is a **capacity-weighted average**: the rate you earn reflects the blend
- * of terminals actually processing the passengers. Two level-1 terminals earn exactly what
- * one level-1 terminal earns per head, and strictly less than one level-2 does — which keeps
- * "build another" and "upgrade the one you have" as a real choice rather than a solved one.
+ * A module counts only if `services.terminalModules` has it — road-served and joined to a
+ * road-served core. A gate hall in a field is a shed.
  */
 export function workingTerminalCapacity(
   airport: Airport,
   services: Services,
-): { passengerCapacity: number; fareMultiplier: number; shopSlots: number } {
-  const working = terminalsOf(airport).filter((t) => isWorking(services, t));
+): {
+  passengerCapacity: number;
+  revenuePerPassenger: number;
+  baggageHalls: number;
+  borderControl: boolean;
+} {
+  const cores = terminalsOf(airport).filter((t) => isWorking(services, t));
 
-  // No terminal, or none of them working, is still level 0: a windsock and a gate in a hedge.
-  // It takes a handful of people off a light aircraft, which is what makes the opening days
-  // of a campaign pay at all — dropping that floor to zero would quietly break day one.
-  if (working.length === 0) {
-    const base = terminalLevel(0);
+  // No terminal, or none of them working, is still a windsock and a gate in a hedge. It takes
+  // a handful of people off a light aircraft, which is what makes the opening days of a
+  // campaign pay at all — dropping this floor to zero quietly breaks day one.
+  if (cores.length === 0) {
     return {
-      passengerCapacity: base.passengerCapacity,
-      fareMultiplier: base.fareMultiplier,
-      shopSlots: base.shopSlots,
+      passengerCapacity: NO_TERMINAL_CAPACITY,
+      revenuePerPassenger: passengerRevenue(0, 0),
+      baggageHalls: 0,
+      borderControl: false,
     };
   }
 
-  const passengerCapacity = working.reduce(
-    (sum, t) => sum + terminalLevel(t.level).passengerCapacity,
-    0,
-  );
-  const weighted = working.reduce((sum, t) => {
-    const level = terminalLevel(t.level);
-    return sum + level.passengerCapacity * level.fareMultiplier;
-  }, 0);
+  const modules = airport.facilities.filter((f) => services.terminalModules.has(f.id));
+  const count = (type: FacilityType): number =>
+    modules.filter((m) => m.type === type).length;
+
+  const gateHalls = count('gate-hall');
+  const baggageHalls = count('baggage-hall');
 
   return {
-    passengerCapacity,
-    fareMultiplier: weighted / passengerCapacity,
-    shopSlots: working.reduce((sum, t) => sum + terminalLevel(t.level).shopSlots, 0),
+    passengerCapacity: cores.length * TERMINAL_CORE_CAPACITY + gateHalls * GATE_HALL_CAPACITY,
+    revenuePerPassenger: passengerRevenue(baggageHalls, count('shop')),
+    baggageHalls,
+    borderControl: count('border-control') > 0,
   };
+}
+
+/** Gate halls actually attached to a working terminal. What retail is capped against. */
+export function workingGateHalls(airport: Airport, services: Services): number {
+  return airport.facilities.filter(
+    (f) => f.type === 'gate-hall' && services.terminalModules.has(f.id),
+  ).length;
 }
 
 export function hasWorkingFuelFarm(airport: Airport, services: Services): boolean {
@@ -163,22 +163,6 @@ export function hasWorkingFuelFarm(airport: Airport, services: Services): boolea
 
 export function hasWorkingFireStation(airport: Airport, services: Services): boolean {
   return isWorking(services, facilityOf(airport, 'fire-station'));
-}
-
-/**
- * Shops that are actually trading: on a road, and next to a working terminal — which is what
- * "inside the terminal" means on a tile grid. A retail unit in a field sells nothing.
- */
-export function workingShops(airport: Airport, services: Services): number {
-  const terminals = terminalsOf(airport).filter((t) => isWorking(services, t));
-  if (terminals.length === 0) return 0;
-
-  // With more than one terminal, "inside the terminal" means touching *any* working one.
-  return shopsOf(airport).filter(
-    (shop) =>
-      services.roadServed.has(shop.id) &&
-      terminals.some((t) => Math.abs(shop.x - t.x) + Math.abs(shop.y - t.y) === 1),
-  ).length;
 }
 
 export function createGame(map: LevelMap, seed = 1): GameState {

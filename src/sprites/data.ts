@@ -399,6 +399,70 @@ const SHOP: SpriteSource = [
   '................',
 ];
 
+/**
+ * The three terminal modules, drawn to be told apart at a glance from a phone's distance.
+ *
+ * They share the terminal's concrete so a concourse reads as one building, and differ in the
+ * one band across the middle: glass for a gate hall, shuttered dock doors for baggage,
+ * a barrier and booth for border control.
+ */
+const GATE_HALL: SpriteSource = [
+  '................',
+  '..CCCCCCCCCCCC..',
+  '..CccccccccccC..',
+  '..CqqqqqqqqqqC..',
+  '..CqQqQqQqQqqC..',
+  '..CqqqqqqqqqqC..',
+  '..CccccccccccC..',
+  '..CccccccccccC..',
+  '..CCCCCCCCCCCC..',
+  '..cccccccccccc..',
+  '..cyccccccccyc..',
+  '..cccccccccccc..',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+
+const BAGGAGE_HALL: SpriteSource = [
+  '................',
+  '..CCCCCCCCCCCC..',
+  '..CccccccccccC..',
+  '..CsssCCsssCcC..',
+  '..CsCsCCsCsCcC..',
+  '..CsssCCsssCcC..',
+  '..CccccccccccC..',
+  '..CoooooooooCC..',
+  '..CCCCCCCCCCCC..',
+  '..cccccccccccc..',
+  '..ceecccccceec..',
+  '..cccccccccccc..',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+
+const BORDER_CONTROL: SpriteSource = [
+  '................',
+  '..CCCCCCCCCCCC..',
+  '..CccccccccccC..',
+  '..CqqCccccCqqC..',
+  '..CqQCccccCQqC..',
+  '..CccCccccCccC..',
+  '..CccccccccccC..',
+  '..CCCCCCCCCCCC..',
+  '..cjjjjjjjjjjc..',
+  '..cpppppppppcc..',
+  '..cjjjjjjjjjjc..',
+  '..cccccccccccc..',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+
 const FIRE_STATION: SpriteSource = [
   '................',
   '..nnnnnnnnnnnn..',
@@ -744,6 +808,9 @@ export const SPRITES = {
   'facility.fuel-farm': FUEL_FARM,
   'facility.fire-station': FIRE_STATION,
   'facility.shop': SHOP,
+  'facility.gate-hall': GATE_HALL,
+  'facility.baggage-hall': BAGGAGE_HALL,
+  'facility.border-control': BORDER_CONTROL,
   'helipad': HELIPAD,
   'plane.single': PLANE_SINGLE,
   'plane.twin': PLANE_TWIN,
