@@ -34,6 +34,12 @@ export interface TutorialStep {
  * for the apron, the roads and the rest of a real airport around it afterwards. A tutorial
  * that walks the player into a corner has taught them the wrong thing twice.
  */
+/**
+ * The tutorial only runs on the opening level, whose field is entirely grass — which is what
+ * makes a fixed suggested position safe.
+ */
+const TUTORIAL_LEVEL_ID = 'meadow';
+
 const RUNWAY_X = 15;
 const RUNWAY_TOP = 10;
 const RUNWAY_TILES = 4;
@@ -119,13 +125,22 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
  * Whether this game is one the tutorial has anything to say to.
  *
  * Kept apart from the steps because it is a different question. `currentStep` asks what is
- * left to do; this asks whether to be here at all — and the answer is only on a brand new
- * campaign. A scenario hands the player a finished airport, so every step would already be
- * satisfied and the panel would flash past; a campaign already under way belongs to someone
- * who learned this weeks ago, and being told again reads as the game losing its place.
+ * left to do; this asks whether to be here at all — and the answer is day one of the *first*
+ * level, and nothing else.
+ *
+ * Each condition rules out a case that looked fine until it was seen on screen. A scenario
+ * hands over a finished airport, so every step would already be satisfied and the panel would
+ * flash past saying nothing. A campaign under way belongs to someone who learned this weeks
+ * ago, and being told again reads as the game losing its place. And a later level is reached
+ * after a hundred days of play — besides which, the suggested runway column below is a fixed
+ * position, and there is nothing to say it is buildable ground on a map with a river in it.
  */
 export function tutorialApplies(state: GameState): boolean {
-  return state.day === 1 && state.scenarioId === null;
+  return (
+    state.day === 1 &&
+    state.scenarioId === null &&
+    state.airport.map.id === TUTORIAL_LEVEL_ID
+  );
 }
 
 /**

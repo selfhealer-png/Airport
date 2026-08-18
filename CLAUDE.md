@@ -213,45 +213,120 @@ to sort by, and taking the strip the airliners needed for something that never t
 be a nonsense. `CLOSED_BY_WRECKAGE` in `step.ts` is how — a reservation to an id no aircraft can
 hold, cleared by `startDay` with every other reservation.
 
-### Passengers and retail
+### Groundworks: what an obstacle becomes
+
+Water, rock and woods sat in `Terrain` for two phases as pure walls. What turns them into
+decisions is not the price — it is **what each one becomes**, and the difference is what may
+*cross* it:
+
+| Terrain | Groundwork | Carries |
+| --- | --- | --- |
+| `woods` | Felling | Anything. It becomes ordinary ground. |
+| `water` | Bridge | Roads and taxiways. No runway, stand, helipad or building. |
+| `rock` | Tunnel | Roads only. |
+
+**Clearing deliberately does not produce grass.** That version keeps suggesting itself and it
+is wrong: if every obstacle converts to buildable ground then terrain is a **money tax** — it
+slows a rich player down and stops nobody, and every obstacle map eventually plays as the
+meadow with a bill attached. Authoring a river through a level would buy nothing the moment
+the player could afford the river.
+
+The three rules give the obstacles genuinely different characters. Woods are the pressure
+valve, the one you buy your way past outright, which is what stops an obstacle map being
+unwinnable. Water splits the **ground** without splitting the routes across it, so an airport
+can straddle an inlet. Rock splits the **airside** absolutely — a runway and its apron can
+never sit on opposite sides of a ridge, while the landside still reaches both. That last one
+is what makes the single-connected-road-network rule a planning problem on those maps rather
+than a formality.
+
+`terrainAllows(terrain, worked, kind)` in `sim/types.ts` is the whole rule, and it replaced
+`isBuildable`, which had exactly one call site. `tileIsFree()` in `build.ts` gained the `kind`
+and every `check…` passes a literal.
+
+`Airport.groundworks` is one `Uint8Array` mask beside `taxiways` and `roads`. **What the work
+bought is read from the terrain underneath rather than stored**, so no tile can end up a bridge
+over grass and there is no second field to keep in step.
+
+Two consequences:
+
+- **Groundworks are permanent and refund nothing.** `checkDemolish` never touches the mask —
+  bare worked ground reports `nothing-there`, and removing the road across a tunnel refunds the
+  road alone. Undo is the only way back, which is why it now repaints the shell after a build.
+- **One chip, priced per tile by what is underneath.** A drag across a wooded slope onto rock
+  is quoted correctly rather than at a blended rate. Grass in the run costs nothing and is
+  skipped rather than refused — the same forgiveness `checkGrowRunway` shows a drag along an
+  already-paved strip.
+
+Three appearances from one mask, joined tile-to-tile where a run continues so a causeway reads
+as one structure: stumps on felled ground, decking over water, a dark cut through rock. A
+player who cannot see what they bought will buy it twice.
+
+### Passengers, and the modular terminal
 
 A landing pays twice: a **landing fee** that is always collected, and the **passengers**, but
-only as many as the terminal can process that day. `TerminalLevel.passengerCapacity` is a
-per-day budget spent across every flight, not a per-flight limit.
+only as many as the terminal can process that day. Terminal capacity is a per-day budget spent
+across every flight, not a per-flight limit.
 
 This split is the terminal's whole job. A longer runway lets a bigger aeroplane in; it does
 nothing about the three hundred people on board. The **freighter carries none**, which is why
 it rewards a long runway before a big terminal and keeps earning on a day the terminal is
-swamped.
+swamped. The landing fee is **flat** — it is what the *runway* earns. It used to be multiplied
+by the terminal's level, which meant a freighter that never touched the terminal still paid
+more for a better one.
 
-**Capacity pools across terminals.** Level 4 caps at 2,600 passengers a day and the schedule
-books over three thousand by day 48, so a second building is the only way past a ceiling that
-would otherwise simply stop the airport growing. `workingTerminalCapacity()` in
-`sim/airport.ts` is the single source of that: passenger capacity and shop slots **sum**, and
-the fare multiplier is a **capacity-weighted average**.
+**A terminal is a core plus modules, not a building with a level.** The level ladder said
+everything about a terminal in one number, which made the biggest building in the game the
+least interesting decision on the map: tap upgrade, pay, done. Four module types, one tile
+each — gate hall (capacity), baggage hall (revenue *and* turnaround), retail unit (revenue),
+border control (unlocks the long-haul classes).
 
-That asymmetry is the design, not an implementation detail. Summing the multiplier would make
-two level-1 terminals worth 2.3x, which with doubled capacity is roughly four times the revenue
-for two of the cheapest buildings in the game — nobody would upgrade anything again.
-`ADDITIONAL_TERMINAL_COST_MULTIPLIER` is the other half: without it a second level-1 building
-is a cheaper way to buy 220 passengers a day than a level-2 upgrade. Together they keep "build
-another" and "upgrade the one you have" a real choice; the auto-player reaches a second terminal
-on day 44, after maxing the first.
+**A module works only as part of a terminal**: road-served, and reachable from a road-served
+core through a chain of road-served modules. `Services.terminalModules` is that flood fill,
+computed in `buildServices()` beside the road network and the taxi links because all three
+answer the same kind of question once, when the day starts. So a concourse is a *layout*, and
+cutting the middle out of one strands everything past the cut.
 
-One trap: `workingTerminalCapacity` must keep the **level-0 floor**. With no working terminal at
-all the old code fell through to level 0 — a windsock and a gate in a hedge, 60 passengers a day
-— and a naive sum returns zero instead, which silently breaks day one, where those 60 people are
-the entire passenger economy.
+**Everything sums.** The old ladder had to defend itself against two cheap sheds beating one
+good building, which is why it carried a capacity-weighted average of fare multipliers that
+nobody could have deduced from playing. Modules cost a tile each, so "more" is already paid
+for in the only currency that is scarce, and plain addition is honest. `TERMINAL_LEVELS`,
+`ADDITIONAL_TERMINAL_COST_MULTIPLIER` and `newTerminalCost` are all gone.
 
-`checkUpgradeFacility`/`applyUpgradeFacility` take a **facility id**, not a type. Keying on type
-only ever worked because there was one of each, and "upgrade the terminal" stops being a
-question with an answer once there are two. Note that an id and a type are both `string`, so the
-typechecker will not catch a stale call site — the tests are what pin it.
+Two things it is worth not re-deriving:
 
-Shops sit *inside* the terminal, which on a tile grid means orthogonally touching **any working
-terminal**, and are capped by the summed `TerminalLevel.shopSlots`. `checkFacility` refuses a bad placement rather than
-letting it be built and quietly earn nothing — £3,500 is too much to lose to something the
-game could simply have declined.
+- **`workingTerminalCapacity` must keep the no-terminal floor** (`NO_TERMINAL_CAPACITY`, 60).
+  A windsock and a gate in a hedge is what makes day one pay for the first runway, and a naive
+  sum returns zero instead — which silently breaks the opening of every campaign.
+- **Retail is rationed against gate halls** (`RETAIL_PER_GATE_HALLS`, two halls to a shop).
+  Land alone is too weak a cap: retail earns per passenger of every flight, so without a limit
+  the winning move is a field of shops beside a single core. One shop per hall was the first
+  rule and read beautifully — until a nine-hall terminal licensed nine shops and day 50 closed
+  on £1.1M.
+
+**Border control is the only requirement about *who* is on board rather than what the
+aeroplane needs to operate**, which is why it is a terminal module and not a support building.
+It is checked in `structuralBlock()` after the runway and the licence, so the player is told
+to build the strip before the dearest building in the game. Going through `structuralBlock`
+is what gets it into the forecast and the debrief for free — and that is the test of whether a
+gate belongs in this game at all. Its first run had no debrief wording, so a fortnight of the
+campaign reported losses as "unknown"; a constraint the player cannot be warned about is a
+punishment, not a mechanic.
+
+**Baggage halls shorten every turnaround** as well as paying per head. That is the module that
+argues with the apron rather than with the bank, and it is what stops the terminal being purely
+a revenue decision. Capped at three (`baggageTurnaroundFactor`), because past that the
+constraint is the apron itself.
+
+Measured against the same seed, the old ladder finished day 50 on **£850,115 at 90% served**;
+modules finish on **£740,557 at 91%**. The economy still runs away, but less than it did.
+
+Every module sits *inside* the terminal, which on a tile grid means orthogonally touching the
+core or another module. `checkFacility` refuses a bad placement rather than letting it be built
+and quietly earn nothing — a gate hall is £1,100 and that is too much to lose to something the
+game could simply have declined. It is gated on what is **built**, not on what is *working*:
+you are allowed to build ahead of the road, and `airportAdvice()` is what tells you a module is
+dead weight. Gating on the working set would make the order you build in matter for no reason
+anyone could deduce.
 
 ### Running costs, and why their *shape* matters more than their size
 
@@ -558,26 +633,107 @@ up or the autosave will resurrect a game the player has just abandoned.
 
 **Level terrain is authored as characters**, like sprite data — `g` grass, `w` water, `r` rock,
 `f` woods — and parsed by `terrainFrom()`, so a typo fails a test rather than producing a map
-with a hole in it. `tests/levels.test.ts` then asserts three invariants across *every* level:
+with a hole in it. `tests/levels.test.ts` then asserts these across *every* level:
 
 - terrain length matches the declared size;
-- at least one column has room for the longest runway in the game, or the campaign is
-  unwinnable on that map;
-- **all grass is one connected region.** This is the one that matters. `roadNetwork()` counts
-  only the single largest connected run of road, so a map whose obstacles split the buildable
-  ground in two would silently make one half useless — a runway there could be paid for and
-  never open, with nothing on screen to explain it. The check caught exactly this while
-  Bracken Rise was being drawn.
+- there is room somewhere for the longest runway in the game, and two distinct columns for the
+  longest military one;
+- **a road can reach every part of the field**, stated against `terrainAllows` rather than
+  against a list of terrains;
+- **the largest single grass region has room for the longest runway.**
 
-Obstacles are permanent: `isBuildable()` refuses anything that is not grass. Paying to clear
-ground is a separate piece of work.
+Those last two replaced "all grass is one connected region", and the reason is worth keeping.
+That rule existed because `roadNetwork()` counts only the largest connected run of road, so a
+map whose obstacles split the buildable ground in two would silently make one half useless — a
+runway there could be paid for and never open. It caught exactly that while Bracken Rise was
+being drawn. **Groundworks retired it**: every obstacle can now be worked to carry a road, so
+no grass region can be stranded, and Tidewater splits its ground deliberately. What survives is
+the *reason* — a region a road cannot reach is dead ground — which is why the test is written
+against `terrainAllows` and will fire the day a terrain is added that roads cannot cross.
+
+The largest-region check is the other half. Splitting a field is fine; making the player bridge
+before they can lay their first strip is a wall rather than a puzzle, and on day one there is
+no money for it.
+
+**Tidewater** is the water level. Both banks are real airports-in-waiting and the inlet sits
+about sixteen columns from either edge: comfortable for a first strip and its apron, tight for
+the airport day 40 wants. So bridging is a mid-campaign decision rather than a day-one tax.
 
 **The day harness is meadow-only.** `scripts/run-day.ts` hardcodes column positions
-(`RUNWAY_X = 5`, `WEST_STAND_X = 8`, `STAND_ROWS`) that a map with obstacles in them would
-turn into nonsense, so Bracken Rise is **not** balance-checked by anything. Treat a new map as
+(`RUNWAY_X = 5`, `WEST_STAND_X = 8`, `STAND_ROWS`, and the terminal chain down `BUILDING_X`)
+that a map with obstacles in them would turn into nonsense, so Bracken Rise and Tidewater are
+**not** balance-checked by anything. Treat a new map as
 a new balance target rather than assuming it inherits the meadow's tuning — the campaign is
 already tuned against seed 42 on one map, and seeds 99 and 3 clear only 42% and 24% of their
 traffic even on the meadow.
+
+### Scenarios
+
+A scenario is an airport you **inherit** rather than one you found. The campaign teaches
+building from nothing, which is a different problem from the one most airports have: somebody
+else's decisions, already paid for, already in the way.
+
+`Scenario.startDay` does the job a win condition would, which is why there is not one. Traffic
+escalates on a fixed schedule, so the day sets the difficulty — and the campaign already ends
+at day 50, so taking over on day 30 *is* a twenty-day scenario. Nothing new to build, nothing
+new to explain, and the ending is the one the player already knows.
+
+Scenarios are authored **as code** in `content/scenarios.ts`: the `add…` helpers are the same
+ones `apply…` calls, so a scenario is written the way an airport is built. The catch is that
+those helpers **do not validate** — they are what runs *after* a check has passed — so a
+scenario can describe an airport the build system would have refused.
+`tests/scenarios.test.ts` is that check, and it earns its place. It caught a taxiway painted
+across a runway (a tile that was two things at once) and a premise that was simply false
+(Overspill's "full" apron had open ground beside every stand). It also pins that each scenario
+is still *unsolved* on the day it hands over the keys, through the same `tomorrowsTraffic()`
+the forecast uses — an inherited airport that already copes is not a scenario, it is a save.
+
+`GameState.scenarioId` is carried on the state rather than derived. Without it the menu offers
+"Continue" against the *level* a scenario borrows and loads somebody else's airport under that
+level's name. Scenario completions are namespaced in the progress list (`scenario:<id>`), which
+is what stops finishing one from unlocking a campaign field — they are side content, always
+open, in both directions.
+
+### The tutorial
+
+Six steps on day one of the first level, teaching the two rules nothing else can: an aeroplane
+needs a runway **and a way off it**, and everything except a taxiway needs a road. Both are
+invisible until they bite, and when they bite the aeroplane is already gone.
+
+Steps are **predicates over a real `GameState`** in `content/tutorial.ts`, pure and DOM-free
+for the same reason `ui/placement.ts` is — `tests/tutorial.test.ts` drives a game through all
+six with the same `check…`/`apply…` pairs a thumb drives. That is the only way to know the
+sequence can be finished at all, and writing it immediately caught the test's own roads being
+two disconnected networks. Every predicate reuses the **simulation's** connectivity functions,
+so the tutorial cannot congratulate a player on something that will not work.
+
+**Nothing is gated.** `currentStep()` returns the first *unsatisfied* step rather than tracking
+an index, so building the stand first simply means the game never asks for it. A tutorial that
+traps you is worse than none.
+
+There is **no skip control and no `tutorialDone` flag**, both of which the design called for
+and neither of which earns its place: the tutorial only appears on day one of a fresh campaign
+and its last step is "open the airport", so the button already on screen is the skip. Day one
+happens once per campaign, and starting a new one should teach it again.
+
+It reuses the existing **hint** rather than adding a panel — already in layout, already sized
+for a phone, already proven not to cover the map. A floating tutorial panel over the field you
+are being told to build on is a mistake this project has shipped once already.
+
+Three things it needs from the rest of the app, each found by playing it:
+
+- **The step outranks the armed-tool message.** The other way round, arming the grass strip
+  replaced "drag out a runway here" the instant the player acted on it, and the next step never
+  appeared while a tool stayed armed.
+- **`armBuildZoom()` centres on the outlined tiles** when there are any. Zooming about the
+  viewport centre is right once the player has framed something, but on the first build the map
+  is merely fitted — so the target scrolled off and the game hid the "here" it had just named.
+- **A successful build reports the next step, not "Built."** The build is already visible on
+  the map; the receipt would otherwise sit there as the last word.
+
+`tutorialApplies()` is kept apart from the steps because it is a different question — whether
+to be here at all. Day one, no scenario, first level. The suggested runway position is fixed,
+and there is nothing to say it is buildable ground on a map with a river in it.
 
 **Reaching a later level for testing:** five taps on the menu title unlocks everything, and the
 title then says so — `Airfield — all levels unlocked` — because a cheat that fires silently is
@@ -695,7 +851,8 @@ currently the only thing that needs it.
 - **TypeScript 7** (the native compiler). `baseUrl` was removed; `paths` entries must be
   relative (`"./src/*"`).
 - Balance numbers belong in `src/content/`, never inlined into `sim/` logic.
-- **A save stores roads, runway use, helipads and the aerodrome licence, and is version 7.** Bump `SNAPSHOT_VERSION`
+- **A save stores roads, runway use, helipads, the aerodrome licence, groundworks and the
+  scenario it came from, and is version 8.** Bump `SNAPSHOT_VERSION`
   whenever the shape changes; old saves are then rejected and a fresh game starts, which is the
   intended migration story. Anything with an id must also join the `nextEntityId` scan in
   `fromSnapshot` — leaving helipads out of it was a bug that would have surfaced two sessions
@@ -705,6 +862,12 @@ currently the only thing that needs it.
 
 ## Gotchas
 
+- **A `check…` passing does not mean an `add…` helper will refuse a bad placement.** The
+  `add…` functions in `sim/airport.ts` paint and do not ask — they are what runs *after* a
+  check has passed. Anything that builds without going through `check…` (scenarios, the day
+  harness, test fixtures) can therefore describe an airport the game would have turned down: a
+  taxiway across a runway, two things on one tile, a structure on unworked rock. If you write
+  one, write the invariant test with it.
 - **Do not write files with Python's `pathlib.write_text()` here.** It defaults to cp1252 on
   this machine and throws partway through on any non-ASCII character, truncating the file it
   already opened. Pass `encoding='utf-8'`, or use the editor tools.
@@ -766,19 +929,22 @@ retail. `Terrain` gained `woods` and the meadow grew to 24x42 to hold it all.
 Nineteen classes now: three military ones on a dedicated strip, and two rotorcraft on helipads.
 
 Since then: reputation removed in favour of a fixed schedule path, helipads, pooled terminal
-capacity, and the sectioned build menu. On seed 42 the auto-player now clears fifty days losing
-42 aeroplanes of 499 — a 92% service level, no crashes at any point.
+capacity, the sectioned build menu, and precision building (build zoom, two-finger pan, aim
+offset, floating anchor).
 
-Remaining: **water levels** (Bracken Rise uses rock and woods; nothing uses water yet, and it
-is the strongest constraint because roads cannot cross it), **terrain clearing costs**, and
-**scenarios**, which the menu already advertises as coming later. Two known rough edges:
+**The depth pack** closed the three items that were listed here as remaining, and replaced the
+terminal ladder while it was at it: **groundworks** (fell, bridge, tunnel), **modular
+terminals** with border control, **two scenarios**, a **six-step tutorial**, and **Tidewater**,
+the water level. On seed 42 the auto-player clears fifty days at a 91% service level with no
+crashes.
 
-- The late campaign still **runs away, though less far**. Handling and certification take
-  about 28% of gross and roughly halve the closing balance (£1.37M → £850k on seed 42), with
-  no cost to the service level. Getting the surplus to zero would need running costs near 70%
-  of revenue, which is repricing the game rather than trimming it — the other half of the
-  problem is that the **upgrade ladder ends around day 40**, so there is genuinely nothing left
-  to buy. More to spend on is the missing half, not a bigger sink.
+Remaining rough edges:
+
+- The late campaign still **runs away**, though modules made it less bad rather than worse:
+  £740,557 at day 50 against £850,115 for the old ladder, on the same seed. Getting the surplus
+  to zero would need running costs near 70% of revenue, which is repricing the game rather than
+  trimming it. Modules are a genuine sink but a **one-off** one; upkeep on them is the obvious
+  next lever and was deliberately left out until the campaign has been re-measured.
 - **The campaign is balanced against seed 42 alone, and is fragile on others.** Measured on the
   fifty-day harness with running costs *disabled*: seed 42 and seed 7 clear at ~90%, seed 99 at
   42%, seed 3 at **24%**. That is a pre-existing property of the economy and the auto-player,
@@ -814,6 +980,11 @@ capped at `STAND_ROWS.length`, silently ignoring the second stand column its own
 defines — seven stands for the entire late campaign. That, and not the map, was two thirds of
 every loss it reported, and it read exactly like a genuine spatial constraint. Before concluding
 that the *game* is short of something, check that the auto-player is not short of it first.
+
+It did it again with modular terminals. Its terminal column had eleven slots; the auto-player
+filled them with gate halls and retail and then had nowhere left for border control, so every
+widebody of the late campaign diverted — which looked exactly like the new gate being priced
+wrong. Running out of *column* is an artefact of that layout, not a fact about the game.
 
 Its layout is load-bearing and was got wrong twice, both times silently:
 

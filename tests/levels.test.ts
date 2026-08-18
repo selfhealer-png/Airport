@@ -29,6 +29,38 @@ describe('terrainFrom', () => {
 
 import { LEVELS } from '@/content/levels';
 import { AIRCRAFT_CLASSES } from '@/content/aircraft';
+import { terrainAllows } from '@/sim/types';
+
+/** Connected runs of grass, largest first. */
+function grassRegions(level: (typeof LEVELS)[number]): Array<Set<number>> {
+  const seen = new Set<number>();
+  const regions: Array<Set<number>> = [];
+
+  for (let i = 0; i < level.terrain.length; i++) {
+    if (seen.has(i) || level.terrain[i] !== 'grass') continue;
+    const region = new Set<number>([i]);
+    seen.add(i);
+    const stack = [i];
+    while (stack.length > 0) {
+      const key = stack.pop()!;
+      const x = key % level.width;
+      const y = Math.floor(key / level.width);
+      for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= level.width || ny >= level.height) continue;
+        const next = ny * level.width + nx;
+        if (seen.has(next) || level.terrain[next] !== 'grass') continue;
+        seen.add(next);
+        region.add(next);
+        stack.push(next);
+      }
+    }
+    regions.push(region);
+  }
+
+  return regions.sort((a, b) => b.size - a.size);
+}
 
 /** The longest runway any class asks for. A map with no room for it is unwinnable. */
 const LONGEST_RUNWAY = Math.max(
@@ -91,12 +123,21 @@ describe.each(LEVELS.map((level) => [level.name, level] as const))(
     });
 
     /**
-     * The one that matters most. Roads count only as a single connected network, so grass
-     * split into two regions means one of them can never be served — a runway built there
-     * would be paid for and never open, with nothing on screen to explain it.
+     * The invariant that replaced "all buildable ground in one connected region".
+     *
+     * That rule existed because roads count only as a single connected network, so grass
+     * split in two meant one half could never be served: a runway there would be paid for and
+     * never open, with nothing on screen to explain it. It caught a real bug while Bracken
+     * Rise was being drawn.
+     *
+     * Groundworks retired it. Every obstacle can now be worked to carry a road — felled,
+     * bridged or tunnelled — so no grass region can be stranded any more, and Tidewater
+     * splits its ground deliberately. What survives is the *reason*: a region a road cannot
+     * reach is unusable ground. Stated against `terrainAllows` rather than against a list of
+     * terrains, so the day something is added that roads cannot cross, this fires instead of
+     * shipping a map with a dead half.
      */
-    it('has all its buildable ground in one connected region', () => {
-      const total = level.terrain.filter((t) => t === 'grass').length;
+    it('can get a road to every part of the field', () => {
       const start = level.terrain.indexOf('grass');
       expect(start).toBeGreaterThanOrEqual(0);
 
@@ -111,13 +152,39 @@ describe.each(LEVELS.map((level) => [level.name, level] as const))(
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= level.width || ny >= level.height) continue;
           const next = ny * level.width + nx;
-          if (seen.has(next) || level.terrain[next] !== 'grass') continue;
+          if (seen.has(next)) continue;
+          const terrain = level.terrain[next]!;
+          // Worked, because the question is what a player can *reach*, not what is free.
+          if (!terrainAllows(terrain, true, 'road')) continue;
           seen.add(next);
           stack.push(next);
         }
       }
 
-      expect(seen.size).toBe(total);
+      const reachable = [...seen].filter((i) => level.terrain[i] === 'grass').length;
+      expect(reachable).toBe(level.terrain.filter((t) => t === 'grass').length);
+    });
+
+    /**
+     * The main airport site has to work without spending anything on groundworks first.
+     *
+     * Splitting a field is fine; making the player bridge before they can lay their first
+     * strip is a wall rather than a puzzle, and on day one there is no money for it. So the
+     * largest single region must hold the longest runway in the game on its own.
+     */
+    it('has room for the longest runway inside one region', () => {
+      const regions = grassRegions(level);
+      const largest = regions[0] ?? new Set<number>();
+
+      let best = 0;
+      for (let x = 0; x < level.width; x++) {
+        let run = 0;
+        for (let y = 0; y < level.height; y++) {
+          run = largest.has(y * level.width + x) ? run + 1 : 0;
+          best = Math.max(best, run);
+        }
+      }
+      expect(best).toBeGreaterThanOrEqual(LONGEST_RUNWAY);
     });
   },
 );
@@ -133,6 +200,62 @@ describe('the level ladder', () => {
     expect(second).toBeDefined();
     expect(second!.terrain).toContain('woods');
     expect(second!.terrain).toContain('rock');
+  });
+
+  it('offers a third level built around water, which splits the ground itself', () => {
+    const third = LEVELS[2];
+    expect(third).toBeDefined();
+    expect(third!.terrain).toContain('water');
+  });
+
+  it('gives Tidewater two banks worth building on', () => {
+    /*
+     * Its premise. Water is the only obstacle that splits the *ground* rather than occupying
+     * it — a bridge carries roads and taxiways, but nothing stands on one — so both banks
+     * have to be real airports-in-waiting. One usable bank and one strip of scenery would be
+     * Bracken Rise with a blue edge.
+     */
+    const tidewater = LEVELS.find((l) => l.id === 'tidewater')!;
+    const regions = grassRegions(tidewater);
+
+    expect(regions.length).toBeGreaterThanOrEqual(2);
+    expect(regions[0]!.size).toBeGreaterThan(400);
+    expect(regions[1]!.size).toBeGreaterThan(400);
+  });
+
+  it('separates the banks of Tidewater with water rather than rock', () => {
+    /*
+     * Which obstacle divides them decides how the level plays. Rock takes a tunnel and
+     * carries a road alone, so an airport could never straddle it; water takes a bridge and
+     * carries taxiways too, so the apron and the runway may sit on opposite banks. This map
+     * is about the second thing.
+     */
+    const tidewater = LEVELS.find((l) => l.id === 'tidewater')!;
+    const regions = grassRegions(tidewater);
+    const west = regions[0]!;
+
+    // Walk out of the largest region through water only. If that reaches the second region,
+    // water is what stands between them.
+    const seen = new Set<number>(west);
+    const stack = [...west];
+    while (stack.length > 0) {
+      const key = stack.pop()!;
+      const x = key % tidewater.width;
+      const y = Math.floor(key / tidewater.width);
+      for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= tidewater.width || ny >= tidewater.height) continue;
+        const next = ny * tidewater.width + nx;
+        if (seen.has(next)) continue;
+        const terrain = tidewater.terrain[next];
+        if (terrain !== 'water' && terrain !== 'grass') continue;
+        seen.add(next);
+        if (terrain === 'water') stack.push(next);
+      }
+    }
+
+    expect([...regions[1]!].some((i) => seen.has(i))).toBe(true);
   });
 
   it('gives every level a distinct id, since a save stores the id', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { currentStep, TUTORIAL_STEPS, tutorialApplies } from '@/content/tutorial';
-import { LEVEL_MEADOW } from '@/content/levels';
+import { LEVEL_BRACKEN_RISE, LEVEL_MEADOW } from '@/content/levels';
 import { createGame } from '@/sim/airport';
 import {
   applyRoadRun,
@@ -94,6 +94,16 @@ describe('walking a real game through the tutorial', () => {
     const state = game();
     expect(tutorialApplies(state)).toBe(true);
     state.day = 9;
+    expect(tutorialApplies(state)).toBe(false);
+  });
+
+  it('does not apply to a later level', () => {
+    /*
+     * Reaching Bracken Rise means a hundred days of play. Being taught to drag out a runway
+     * there reads as the game losing its place — and the suggested position is fixed, so on a
+     * map with a river in it there is nothing to say it is even buildable ground.
+     */
+    const state = createGame(LEVEL_BRACKEN_RISE, 42);
     expect(tutorialApplies(state)).toBe(false);
   });
 

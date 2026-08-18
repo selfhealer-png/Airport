@@ -92,8 +92,9 @@ export const LEVEL_MEADOW: LevelMap = {
  * can on an empty field — so the player has to choose a shape rather than repeat the one
  * they already know.
  *
- * Obstacles are permanent for now: `isBuildable()` refuses anything that is not grass, and
- * paying to clear ground is a later piece of work.
+ * Obstacles are no longer permanent — see `terrainAllows`. Woods here can be felled and the
+ * rock tunnelled for a road, which turns this map from "build around it" into "decide what
+ * it is worth moving".
  */
 export const LEVEL_BRACKEN_RISE: LevelMap = {
   id: 'bracken-rise',
@@ -147,8 +148,75 @@ export const LEVEL_BRACKEN_RISE: LevelMap = {
   ]),
 };
 
+/**
+ * The third field: a tidal inlet, and buildable ground on both banks.
+ *
+ * Water is the strongest constraint in the game because it is the one obstacle that splits
+ * the *ground* rather than merely occupying it. A bridge carries roads and taxiways across;
+ * nothing stands on one. So both banks are real airports-in-waiting and neither is quite big
+ * enough to be the whole thing — the inlet is roughly 16 columns from either edge, which is
+ * comfortable for a first strip and its apron and tight for the airport day 40 wants.
+ *
+ * That makes bridging a mid-campaign decision rather than a day-one tax, which is the right
+ * shape: a level that demanded £4,500 of causeway before the first aeroplane would be a wall,
+ * not a puzzle. Woods on both banks are the pressure valve, and the rock shoulder in the
+ * north-east pushes the east bank's long columns south, so the two sides do not simply
+ * mirror each other.
+ */
+export const LEVEL_TIDEWATER: LevelMap = {
+  id: 'tidewater',
+  name: 'Tidewater',
+  ...terrainFrom([
+    'gggggggggggggggggwwgggggggrgggggggg',
+    'gggggggggggggggggwwgggggrrrrrgrgggg',
+    'gggggggggggggggggggwwgggrrrrrrrrrgg',
+    'gggggggggggggggggggwwggrrrrrrrrrrrg',
+    'gggggggggggggggggggwwgggrrrrrrrrrrg',
+    'gggggggggggggggggggwwgggrrrrrrrrrrr',
+    'ggggggggggggggggggggwwwgggrrrrrrrrg',
+    'ggggggggggggggggggggwwwggggrrrrrrrg',
+    'ggggggggggggggggggggwwwgggggrrrrrgg',
+    'gggggggggggggggggggwwwggggggggrgggg',
+    'gggggggggggggggggggwwwggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'gggggggggggggggggwwwggggggggggggggg',
+    'gggggggggggggggggwwwggggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggggggggggggggggwwwgggggggggggggg',
+    'ggggfggggggggggggwwwggggggggggggggg',
+    'gggfffgggggggggggwwwggggggggggggggg',
+    'ggfffffggggggggggwwwggggggggggggfgg',
+    'gggfffgggggggggggwwwgggggggggggfffg',
+    'ggggfggggggggggwwwggggggggggggfffff',
+    'gggggggfgggggggwwwgggggggggggggfffg',
+    'gggggfffffgggggwwwwgggggggggggggfgg',
+    'ggggfffffffgggwwwwgggggggggggfggggg',
+    'ggggfffffffgggwwwwgggggggggfffffggg',
+    'gggfffffffffggwwwwgggggggggfffffggg',
+    'ggggfffffffgggwwwwggggggggfffffffgg',
+    'ggggfffffffgggwwwwgggggggggfffffggg',
+    'gggggfffffgfggwwwwgggggggggfffffggg',
+    'gggggggfgfffffwwwwgggggggggggfggggg',
+    'gggggggggfffffgwwwwgggggggfgggggggg',
+    'ggggggggfffffffgwwwwggggfffffgggggg',
+    'gggggggggfffffggwwwwggggfffffgggggg',
+    'gggggggggfffffgggwwwwggfffffffggggg',
+    'gggggggggggfgggggwwwwgggfffffgggggg',
+    'ggggggggggggggggggwwwwggfffffgggggg',
+    'ggggggggggggggggggwwwwggggfgggggggg',
+  ]),
+};
+
 /** Order is the campaign order — `isUnlocked()` reads it as a chain. */
-export const LEVELS: readonly LevelMap[] = [LEVEL_MEADOW, LEVEL_BRACKEN_RISE];
+export const LEVELS: readonly LevelMap[] = [LEVEL_MEADOW, LEVEL_BRACKEN_RISE, LEVEL_TIDEWATER];
 
 export function levelById(id: string): LevelMap | undefined {
   return LEVELS.find((level) => level.id === id);
